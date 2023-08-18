@@ -1,0 +1,182 @@
+---
+title: "APR Analysis"
+---
+```{r}
+library(tidyverse)
+library(janitor)
+library(fmsb)
+library(stats)
+```
+
+```{r}
+summary <- readxl::read_excel("c:/Users/coles/Documents/spring_23/graphicsdesk/data/apr_summary.xlsx") %>% clean_names()
+supporting <- readxl::read_excel("c:/Users/coles/Documents/spring_23/graphicsdesk/data/apr_supporting_data.xlsx") %>% clean_names()
+data_dictionary <- read_csv("c:/Users/coles/Documents/spring_23/graphicsdesk/data/data_dictionary.csv")
+
+
+transpose_df <- function(df) {
+  t_df <- data.table::transpose(df)
+  colnames(t_df) <- rownames(df)
+  rownames(t_df) <- colnames(df)
+  t_df <- t_df %>%
+    tibble::rownames_to_column(.data = .) %>%
+    tibble::as_tibble(.)
+  return(t_df)
+}
+``` 
+
+```{r}
+summary <- summary %>% anti_join(supporting %>% filter(is_k_12_district == "N"), by="district_name") 
+```
+
+
+
+```{r}
+cps_ranks <- summary %>%
+  mutate(across(-c(1:4, lea_response_to_standards), ~ rank(- .x, ties.method = 'min'))) %>% 
+ filter(grepl("Columbia", district_name, ignore.case=T)) %>% 
+  transpose_df() %>%
+  rename(key=rowname, rank_min="1") %>% 
+  left_join(summary %>%
+              mutate(across(-c(1:4, lea_response_to_standards), ~ rank(- .x, ties.method = 'max'))) %>% 
+              filter(grepl("Columbia", district_name, ignore.case=T)) %>%
+              transpose_df() %>%
+              rename(key=rowname, rank_max="1")
+  ) %>% 
+  left_join(summary %>%
+              filter(grepl("Columbia", district_name, ignore.case=T)) %>% 
+              transpose_df() %>%
+              rename(key=rowname, value="1"),
+            by="key") %>% 
+  left_join(summary %>%
+              mutate(across(-c(1:4, lea_response_to_standards), ~ max(.x))) %>%
+              transpose_df() %>%
+              rename(key=rowname, max="1") %>% 
+              select(key, max),
+              by="key") %>% 
+  left_join(summary %>%
+              mutate(across(-c(1:4, lea_response_to_standards), ~ min(.x))) %>%
+              transpose_df() %>%
+              rename(key=rowname, min="1") %>% 
+              select(key, min),
+              by="key") %>% 
+  left_join(summary %>%
+              mutate(across(-c(1:4, lea_response_to_standards), ~ round(mean(.x), 2))) %>%
+              transpose_df() %>%
+              rename(key=rowname, mean = "1") %>% 
+              select(key, mean),
+              by="key") %>% 
+  left_join(summary %>%
+              mutate(across(-c(1:4, lea_response_to_standards), ~ round(median(.x), 2))) %>%
+              transpose_df() %>%
+              rename(key=rowname, median = "1") %>% 
+              select(key, median),
+              by="key") 
+  
+cps_ranks <- cps_ranks[-(1:4),]
+cps_ranks <- cps_ranks[-(27),]
+
+cps_ranks <- cps_ranks %>% 
+  mutate(percent = round(as.numeric(value)/as.numeric(max),2), 
+         percentile_min = round(100-as.numeric(rank_min)*100/458, 0),
+         percentile_max = round(100-as.numeric(rank_max)*100/458, 0),
+         percentile_range = ifelse(percentile_max == percentile_min, percentile_max, paste0(percentile_max, "-", percentile_min)),
+         mean_percent = as.numeric(mean)/as.numeric(max))
+
+cps_ranks %>% filter(min == max)
+
+  #left_join(data_dictionary, by=join_by())
+  #mutate(rank = rank(-percent_points_earned, ties.method = 'min')) %>%
+  #filter(grepl("Columbia", district_name, ignore.case=T)) %>% 
+  #select(district_name, rank, total_points_earned, total_points_possible) %>% 
+  #arrange(rank)
+```
+
+
+
+
+```{r}
+summary[-c(1,2,3,31,32,34)] %>% 
+  pivot_longer(-district_name, names_to = "name", values_to = "value") %>%
+  mutate(columbia = grepl("Columbia", district_name, ignore.case=T)) %>% 
+  left_join(cps_ranks, by=join_by("name"=="key")) %>% 
+  filter(min != max) %>% 
+  ggplot(aes(x=value.x, fill=columbia)) +
+  geom_dotplot() +
+  theme(legend.position = "bottom",
+        axis.text.y = element_blank(),
+        axis.ticks = element_blank())+
+  facet_wrap(~name, scales = "free")
+
+```
+```{r}
+radar_data <- cps_ranks %>% 
+  filter(grepl("status", key)) %>% 
+  mutate(Min = 0, Max = 1, key = str_extract(key, "(?<=earned_).+")) %>%
+  select(key, Max, Min, mean_percent, percent) %>%
+  transpose_df() %>% 
+  row_to_names(row_number = 1) %>% 
+  column_to_rownames(var = "key") %>% 
+  mutate_at(c(1:8), "as.numeric")
+
+color = c("DarkGray", "DarkSlateBlue") 
+
+radarchart(radar_data,
+           axistype = 0,
+           seg = 4,
+           pty = ".",
+           # Customize the polygon
+           pcol = color, pfcol = scales::alpha(color, 0.5), plwd = 2, plty = c(1,0),
+           # Customize the grid
+           cglcol = "grey", 
+           cglty = 1, 
+           cglwd = 0.8,
+           # Customize the axis 
+           axislabcol = "grey", 
+           # Variable labels
+           vlcex = .75, 
+           vlabels = c(""))
+```
+
+
+```{r}
+plot_df <- cps_ranks %>% filter(grepl(c("math|attnd|icap|ela|adv_cred"), key)) %>% select(key, value, mean)
+
+write_csv(plot_df, file="c:/Users/coles/Documents/spring_23/graphicsdesk/data/highlight.csv")
+
+```
+
+```{r}
+supporting %>% filter(is_k_12_district == "Y") %>% anti_join(summary, by="district_name")
+```
+```{r}
+supporting %>% 
+  left_join(summary, by="district_name") %>%  
+  ggplot(aes(x=attnd_curr_pct_attnd, y=percent_points_earned)) + 
+  geom_point() + 
+  geom_smooth(method="lm")
+
+cor_data <- supporting %>% left_join(summary, by="district_name") %>% mutate_if(is.character, as.numeric) %>% select_if(~ !any(is.na(.)))
+
+cor(cor_data$attnd_curr_pct_attnd, cor_data$percent_points_earned)
+
+supporting <- supporting %>% mutate_at(8:83, as.numeric)
+
+typeof(supporting)
+
+supporting <- supporting[,colSums(is.na(supporting))<nrow(supporting)]
+
+cor(supporting[8:74] %>% na.omit())
+
+cor(cor_data[sapply(cor_data,is.numeric)])
+
+supporting[8:74] %>% pivot_longer(-attnd_curr_pct_attnd ,names_to = "name", values_to = "value") %>% ggplot(aes(x=attnd_curr_pct_attnd, y=value)) + geom_point() + geom_smooth() + facet_wrap(~name, scales="free") + theme(legend.position = "bottom",
+        axis.text = element_blank(),
+        axis.ticks = element_blank())
+
+```
+
+```{r}
+supporting %>% filter(is_k_12_district == "Y") %>% mutate(across(attnd_curr_pct_attnd, ~ rank(- .x, ties.method = 'max'))) %>% filter(grepl("Columbia", district_name, ignore.case=T)) %>% select(attnd_curr_pct_attnd)
+
+```

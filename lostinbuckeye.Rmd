@@ -1,0 +1,1854 @@
+---
+title: "Methodolgy of U.S. Missing Persons Analysis"
+output: html_document
+---
+
+## Sections
+
+#### [1. Data collection and cleaning](#data-collection-and-cleaning-1)
+
+#### [2. Analysis](#analysis-1)
+
+#### [3. Recommendations and resources for further research](#recommendations-and-resources-for-further-research-1)
+
+## 1. Data collection and cleaning {#data-collection-and-cleaning-1}
+
+Two datasets were collected for this analysis: the National Crime Information Center Missing Person and Unidentified Person Statistics (2007-2022) and the National Missing and Unidentified Persons System (current).
+
+```{r}
+# install.packages(c("tidyverse", "janitor", "pdftools", "lubridate", "rvest", "remotes"))
+# remotes::install_github("ropensci/tabulizer")
+
+library(tidyverse)
+library(janitor)
+library(pdftools)
+library(lubridate)
+library(tabulizer)
+library(rvest)
+```
+
+### A. National Crime Information Center Missing Person and Unidentified Person Statistics (2007-2022)
+
+The FBI releases yearly reports on missing persons in the U.S. If a missing persons case is reported missing to local law enforcement, they are required to report it to the FBI within two hours of the receiving these reports.
+
+There reports are typically release in early February. The most recent report was released on February 2, 2023 and covered 2022 missing persons cases.
+
+The official name of these reports is the National Crime Information Center Missing Person and Unidentified Person Statistics. The reports contain information relating unidentified persons as well, but for the purpose of my reporting and preview of my article, I will only be focusing on the missing persons data.
+
+There two units of data: entry and purged. Purged includes the number of records that are "cancelled, cleared and located."
+
+"Purged" is much more limited than "entry" in level of aggregation. Though levels of aggregation vary year for both "purged" and "entry" data.
+
+For 2015-22, each year's data was available as PDFs on the FBI website. For 2007-14, each year's data is available as a html page.
+
+Because of the different formats they required different tools.
+
+For the more recent years, the R package tabulizer was used to scrape PDF tables, which requires a Java environment because it connects to Tabula, a java program.
+
+```{r}
+url <- c("https://www.fbi.gov/file-repository/", "year here", "-ncic-missing-person-and-unidentified-person-statistics.pdf")
+
+years <- seq(2015, 2022)
+
+for (year in years){
+  
+  pdf_path <- paste0(url[1], year, url[3])
+  
+  tables <- extract_tables(pdf_path, output = "data.frame")
+  
+  # assigns variables to each year
+  assign(paste0("missing_persons_stats_", year), tables)
+}
+```
+
+For the earlier years, rvest was used to scrape the HTML tables.
+
+```{r}
+url <- "https://archives.fbi.gov/archives/about-us/cjis/ncic/ncic-missing-person-and-unidentified-person-statistics-for-"
+
+years <- seq(2007, 2014) 
+
+for (year in years) {
+  
+  page_path <- paste0(url, year)
+  
+  tables <- 
+    page_path %>% 
+    read_html() %>% 
+    html_table()
+  
+  # assigns variables to each years
+  assign(paste0("missing_persons_stats_", year), tables)
+}
+```
+
+Every year was formatted slightly differently, so the cleaning prompt had to slightly edited for each year.
+
+Like mentioned earlier the levels of aggregation varied, more specifically, the most recent three years had a great level of depth. So, I chooses to gather more detailed data and then aggregate the data to match the other years. This leaves the older years with NAs for that more detailed data.
+
+```{r echo=FALSE, warning=FALSE}
+missing_persons_entry_by_sex_race_age <- tibble(
+  year = character(),
+  female_asian_minor = numeric(),
+  female_asian_adult = numeric(),
+  female_black_minor = numeric(),
+  female_black_adult = numeric(),
+  female_indian_minor = numeric(),
+  female_indian_adult = numeric(),
+  female_unknown_race_minor = numeric(),
+  female_unknown_race_adult = numeric(),
+  female_white_minor = numeric(),
+  female_white_adult = numeric(),
+  male_asian_minor = numeric(),
+  male_asian_adult = numeric(),
+  male_black_minor = numeric(),
+  male_black_adult = numeric(),
+  male_indian_minor = numeric(),
+  male_indian_adult = numeric(),
+  male_unknown_race_minor = numeric(),
+  male_unknown_race_adult = numeric(),
+  male_white_minor = numeric(),
+  male_white_adult = numeric(),
+  unknown_sex_asian_minor = numeric(),
+  unknown_sex_asian_adult = numeric(),
+  unknown_sex_black_minor = numeric(),
+  unknown_sex_black_adult = numeric(),
+  unknown_sex_indian_minor = numeric(),
+  unknown_sex_indian_adult = numeric(),
+  unknown_sex_unknown_race_minor = numeric(),
+  unknown_sex_unknown_race_adult = numeric(),
+  unknown_sex_white_minor = numeric(),
+  unknown_sex_white_adult = numeric()
+)
+
+target <- data.frame(missing_persons_stats_2022[3])
+missing_persons_entry_by_sex_race_age <- missing_persons_entry_by_sex_race_age %>% add_row(
+  year = "2022",
+  female_asian_minor = as.numeric(gsub(",","",target[3,2])),
+  female_asian_adult = as.numeric(gsub(",","",target[4,2])),
+  female_black_minor = as.numeric(gsub(",","",target[3,3])),
+  female_black_adult = as.numeric(gsub(",","",target[4,3])),
+  female_indian_minor = as.numeric(gsub(",","",target[3,4])),
+  female_indian_adult = as.numeric(gsub(",","",target[4,4])),
+  female_unknown_race_minor = as.numeric(gsub(",","",target[3,5])),
+  female_unknown_race_adult = as.numeric(gsub(",","",target[4,5])),
+  female_white_minor = as.numeric(gsub(",","",target[3,6])),
+  female_white_adult = as.numeric(gsub(",","",target[4,6])),
+  male_asian_minor = as.numeric(gsub(",","",target[3,7])),
+  male_asian_adult = as.numeric(gsub(",","",target[4,7])),
+  male_black_minor = as.numeric(gsub(",","",target[3,8])),
+  male_black_adult = as.numeric(gsub(",","",target[4,8])),
+  male_indian_minor = as.numeric(gsub(",","",target[3,9])),
+  male_indian_adult = as.numeric(gsub(",","",target[4,9])),
+  male_unknown_race_minor = as.numeric(gsub(",","",target[3,10])),
+  male_unknown_race_adult = as.numeric(gsub(",","",target[4,10])),
+  male_white_minor = as.numeric(gsub(",","",target[3,11])),
+  male_white_adult = as.numeric(gsub(",","",target[4,11])),
+  unknown_sex_asian_minor = as.numeric(gsub(",","",target[3,12])),
+  unknown_sex_asian_adult = as.numeric(gsub(",","",target[4,12])),
+  unknown_sex_black_minor = as.numeric(gsub(",","",target[3,13])),
+  unknown_sex_black_adult = as.numeric(gsub(",","",target[4,13])),
+  unknown_sex_indian_minor = as.numeric(gsub(",","",target[3,14])),
+  unknown_sex_indian_adult = as.numeric(gsub(",","",target[4,14])),
+  unknown_sex_unknown_race_minor = as.numeric(gsub(",","",target[3,15])),
+  unknown_sex_unknown_race_adult = as.numeric(gsub(",","",target[4,15])),
+  unknown_sex_white_minor = as.numeric(gsub(",","",target[3,16])),
+  unknown_sex_white_adult =as.numeric(gsub(",","",target[4,16])))
+
+
+target <- data.frame(missing_persons_stats_2021[4])
+missing_persons_entry_by_sex_race_age <- missing_persons_entry_by_sex_race_age %>% add_row(
+  year = "2021",
+  female_asian_minor = as.numeric(gsub(",","",target[3,2])),
+  female_asian_adult = as.numeric(gsub(",","",target[4,2])),
+  female_black_minor = as.numeric(gsub(",","",target[3,3])),
+  female_black_adult = as.numeric(gsub(",","",target[4,3])),
+  female_indian_minor = as.numeric(gsub(",","",target[3,4])),
+  female_indian_adult = as.numeric(gsub(",","",target[4,4])),
+  female_unknown_race_minor = as.numeric(gsub(",","",target[3,5])),
+  female_unknown_race_adult = as.numeric(gsub(",","",target[4,5])),
+  female_white_minor = as.numeric(gsub(",","",target[3,6])),
+  female_white_adult = as.numeric(gsub(",","",target[4,6])),
+  male_asian_minor = as.numeric(gsub(",","",target[3,7])),
+  male_asian_adult = as.numeric(gsub(",","",target[4,7])),
+  male_black_minor = as.numeric(gsub(",","",target[3,8])),
+  male_black_adult = as.numeric(gsub(",","",target[4,8])),
+  male_indian_minor = as.numeric(gsub(",","",target[3,9])),
+  male_indian_adult = as.numeric(gsub(",","",target[4,9])),
+  male_unknown_race_minor = as.numeric(gsub(",","",target[3,10])),
+  male_unknown_race_adult = as.numeric(gsub(",","",target[4,10])),
+  male_white_minor = as.numeric(gsub(",","",target[3,11])),
+  male_white_adult = as.numeric(gsub(",","",target[4,11])),
+  unknown_sex_asian_minor = as.numeric(gsub(",","",target[3,12])),
+  unknown_sex_asian_adult = as.numeric(gsub(",","",target[4,12])),
+  unknown_sex_black_minor = as.numeric(gsub(",","",target[3,13])),
+  unknown_sex_black_adult = as.numeric(gsub(",","",target[4,13])),
+  unknown_sex_indian_minor = as.numeric(gsub(",","",target[3,14])),
+  unknown_sex_indian_adult = as.numeric(gsub(",","",target[4,14])),
+  unknown_sex_unknown_race_minor = as.numeric(gsub(",","",target[3,15])),
+  unknown_sex_unknown_race_adult = as.numeric(gsub(",","",target[4,15])),
+  unknown_sex_white_minor = as.numeric(gsub(",","",target[3,16])),
+  unknown_sex_white_adult =as.numeric(gsub(",","",target[4,16])))
+
+target <- data.frame(missing_persons_stats_2020[3]) %>% separate(col = 6, into = c("one", "two", "three", "four", "five", "six"), sep=" ")
+missing_persons_entry_by_sex_race_age <- missing_persons_entry_by_sex_race_age %>% add_row(
+  year = "2020",
+  female_asian_minor = as.numeric(gsub(",","",target[3,2])),
+  female_asian_adult = as.numeric(gsub(",","",target[4,2])),
+  female_black_minor = as.numeric(gsub(",","",target[3,3])),
+  female_black_adult = as.numeric(gsub(",","",target[4,3])),
+  female_indian_minor = as.numeric(gsub(",","",target[3,4])),
+  female_indian_adult = as.numeric(gsub(",","",target[4,4])),
+  female_unknown_race_minor = as.numeric(gsub(",","",target[3,5])),
+  female_unknown_race_adult = as.numeric(gsub(",","",target[4,5])),
+  female_white_minor = as.numeric(gsub(",","",target[3,6])),
+  female_white_adult = as.numeric(gsub(",","",target[4,6])),
+  male_asian_minor = as.numeric(gsub(",","",target[3,7])),
+  male_asian_adult = as.numeric(gsub(",","",target[4,7])),
+  male_black_minor = as.numeric(gsub(",","",target[3,8])),
+  male_black_adult = as.numeric(gsub(",","",target[4,8])),
+  male_indian_minor = as.numeric(gsub(",","",target[3,9])),
+  male_indian_adult = as.numeric(gsub(",","",target[4,9])),
+  male_unknown_race_minor = as.numeric(gsub(",","",target[3,10])),
+  male_unknown_race_adult = as.numeric(gsub(",","",target[4,10])),
+  male_white_minor = as.numeric(gsub(",","",target[3,11])),
+  male_white_adult = as.numeric(gsub(",","",target[4,11])),
+  unknown_sex_asian_minor = as.numeric(gsub(",","",target[3,12])),
+  unknown_sex_asian_adult = as.numeric(gsub(",","",target[4,12])),
+  unknown_sex_black_minor = as.numeric(gsub(",","",target[3,13])),
+  unknown_sex_black_adult = as.numeric(gsub(",","",target[4,13])),
+  unknown_sex_indian_minor = as.numeric(gsub(",","",target[3,14])),
+  unknown_sex_indian_adult = as.numeric(gsub(",","",target[4,14])),
+  unknown_sex_unknown_race_minor = as.numeric(gsub(",","",target[3,15])),
+  unknown_sex_unknown_race_adult = as.numeric(gsub(",","",target[4,15])),
+  unknown_sex_white_minor = as.numeric(gsub(",","",target[3,16])),
+  unknown_sex_white_adult =as.numeric(gsub(",","",target[4,16])))
+
+
+missing_persons_entry_by_sex_race_age <- missing_persons_entry_by_sex_race_age %>% mutate(
+  female_minor = rowSums(across(matches("female_[A-Za-z]+_minor"))),
+  male_minor = rowSums(across(matches("male_[A-Za-z]+_minor"))),
+  female_adult = rowSums(across(matches("female_[A-Za-z]+_adult"))),
+  male_adult = rowSums(across(matches("male_[A-Za-z]+_adult"))),
+  unknown_sex_minor = rowSums(across(matches("unknown_sex_[A-Za-z]+_minor"))),
+  unknown_sex_adult = rowSums(across(matches("unknown_sex_[A-Za-z]+_adult"))),
+  asian_minor = rowSums(across(contains("asian_minor"))),
+  asian_adult = rowSums(across(contains("asian_adult"))),
+  black_minor = rowSums(across(contains("black_minor"))),
+  black_adult = rowSums(across(contains("black_adult"))),
+  indian_minor = rowSums(across(contains("indian_minor"))),
+  indian_adult = rowSums(across(contains("indian_adult"))),
+  unknown_race_minor = rowSums(across(contains("unknown_race_minor"))),
+  unknown_race_adult = rowSums(across(contains("unknown_race_adult"))),
+  white_minor = rowSums(across(contains("white_minor"))),
+  white_adult = rowSums(across(contains("white_adult")))
+)
+
+target <- data.frame(missing_persons_stats_2019[5]) %>% separate(col = 6, into = c("one", "two", "three"), sep=" ")
+missing_persons_entry_by_sex_race_age <- missing_persons_entry_by_sex_race_age %>% add_row(
+  year = "2019",
+  female_minor = as.numeric(gsub(",","",target[3,7])),
+  male_minor = as.numeric(gsub(",","",target[3,8])),
+  female_adult = as.numeric(gsub(",","",target[4,7])),
+  male_adult = as.numeric(gsub(",","",target[4,8])),
+  unknown_sex_minor = as.numeric(gsub(",","",target[3,9])),
+  unknown_sex_adult = as.numeric(gsub(",","",target[4,9])),
+  asian_minor = as.numeric(gsub(",","",target[3,10])),
+  asian_adult = as.numeric(gsub(",","",target[4,10])),
+  black_minor = as.numeric(gsub(",","",target[3,11])),
+  black_adult = as.numeric(gsub(",","",target[4,11])),
+  indian_minor = as.numeric(gsub(",","",target[3,12])),
+  indian_adult = as.numeric(gsub(",","",target[4,12])),
+  unknown_race_minor = as.numeric(gsub(",","",target[3,13])),
+  unknown_race_adult = as.numeric(gsub(",","",target[4,13])),
+  white_minor = as.numeric(gsub(",","",target[3,14])),
+  white_adult = as.numeric(gsub(",","",target[4,14]))
+  )
+
+target <- data.frame(missing_persons_stats_2018[5]) %>% separate(col = 6, into = c("one", "two", "three"), sep=" ")
+missing_persons_entry_by_sex_race_age <- missing_persons_entry_by_sex_race_age %>% add_row(
+  year = "2018",
+  female_minor = as.numeric(gsub(",","",target[3,7])),
+  male_minor = as.numeric(gsub(",","",target[3,8])),
+  female_adult = as.numeric(gsub(",","",target[4,7])),
+  male_adult = as.numeric(gsub(",","",target[4,8])),
+  unknown_sex_minor = as.numeric(gsub(",","",target[3,9])),
+  unknown_sex_adult = as.numeric(gsub(",","",target[4,9])),
+  asian_minor = as.numeric(gsub(",","",target[3,10])),
+  asian_adult = as.numeric(gsub(",","",target[4,10])),
+  black_minor = as.numeric(gsub(",","",target[3,11])),
+  black_adult = as.numeric(gsub(",","",target[4,11])),
+  indian_minor = as.numeric(gsub(",","",target[3,12])),
+  indian_adult = as.numeric(gsub(",","",target[4,12])),
+  unknown_race_minor = as.numeric(gsub(",","",target[3,13])),
+  unknown_race_adult = as.numeric(gsub(",","",target[4,13])),
+  white_minor = as.numeric(gsub(",","",target[3,14])),
+  white_adult = as.numeric(gsub(",","",target[4,14]))
+  )
+
+target <- data.frame(missing_persons_stats_2017[4]) %>% separate(col = 1, into = c("one", "two", "three"), sep=" ")
+missing_persons_entry_by_sex_race_age <- missing_persons_entry_by_sex_race_age %>% add_row(
+  year = "2017",
+  female_minor = as.numeric(gsub(",","",target[3,8])),
+  female_adult = as.numeric(gsub(",","",target[4,8])),
+  male_minor = as.numeric(gsub(",","",target[3,9])),
+  male_adult = as.numeric(gsub(",","",target[4,9])),
+  unknown_sex_minor = as.numeric(gsub(",","",target[3,10])),
+  unknown_sex_adult = as.numeric(gsub(",","",target[4,10])),
+  asian_minor = as.numeric(gsub(",","",target[3,11])),
+  asian_adult = as.numeric(gsub(",","",target[4,11])),
+  black_minor = as.numeric(gsub(",","",target[3,12])),
+  black_adult = as.numeric(gsub(",","",target[4,12])),
+  indian_minor = as.numeric(gsub(",","",target[3,13])),
+  indian_adult = as.numeric(gsub(",","",target[4,13])),
+  unknown_race_minor = as.numeric(gsub(",","",target[3,14])),
+  unknown_race_adult = as.numeric(gsub(",","",target[4,14])),
+  white_minor = as.numeric(gsub(",","",target[3,15])),
+  white_adult = as.numeric(gsub(",","",target[4,15]))
+  )
+
+target <- data.frame(missing_persons_stats_2016[4])
+missing_persons_entry_by_sex_race_age <- missing_persons_entry_by_sex_race_age %>% add_row(
+  year = "2016",
+  female_minor = as.numeric(gsub(",","",target[3,8])),
+  female_adult = as.numeric(gsub(",","",target[4,8])),
+  male_minor = as.numeric(gsub(",","",target[3,9])),
+  male_adult = as.numeric(gsub(",","",target[4,9])),
+  unknown_sex_minor = as.numeric(gsub(",","",target[3,10])),
+  unknown_sex_adult = as.numeric(gsub(",","",target[4,10])),
+  asian_minor = as.numeric(gsub(",","",target[3,12])),
+  asian_adult = as.numeric(gsub(",","",target[4,12])),
+  black_minor = as.numeric(gsub(",","",target[3,13])),
+  black_adult = as.numeric(gsub(",","",target[4,13])),
+  indian_minor = as.numeric(gsub(",","",target[3,14])),
+  indian_adult = as.numeric(gsub(",","",target[4,14])),
+  unknown_race_minor = as.numeric(gsub(",","",target[3,15])),
+  unknown_race_adult = as.numeric(gsub(",","",target[4,15])),
+  white_minor = as.numeric(gsub(",","",target[3,16])),
+  white_adult = as.numeric(gsub(",","",target[4,16]))
+  )
+
+target <- data.frame(missing_persons_stats_2015[3])
+missing_persons_entry_by_sex_race_age <- missing_persons_entry_by_sex_race_age %>% add_row(
+  year = "2015",
+  female_minor = as.numeric(gsub(",","",target[3,8])),
+  female_adult = as.numeric(gsub(",","",target[4,8])),
+  male_minor = as.numeric(gsub(",","",target[3,9])),
+  male_adult = as.numeric(gsub(",","",target[4,9])),
+  unknown_sex_minor = as.numeric(gsub(",","",target[3,10])),
+  unknown_sex_adult = as.numeric(gsub(",","",target[4,10])),
+  asian_minor = as.numeric(gsub(",","",target[3,11])),
+  asian_adult = as.numeric(gsub(",","",target[4,11])),
+  black_minor = as.numeric(gsub(",","",target[3,12])),
+  black_adult = as.numeric(gsub(",","",target[4,12])),
+  indian_minor = as.numeric(gsub(",","",target[3,13])),
+  indian_adult = as.numeric(gsub(",","",target[4,13])),
+  unknown_race_minor = as.numeric(gsub(",","",target[3,14])),
+  unknown_race_adult = as.numeric(gsub(",","",target[4,14])),
+  white_minor = as.numeric(gsub(",","",target[3,15])),
+  white_adult = as.numeric(gsub(",","",target[4,15]))
+  )
+
+target <- data.frame(missing_persons_stats_2014[4]) %>% t()
+missing_persons_entry_by_sex_race_age <- missing_persons_entry_by_sex_race_age %>% add_row(
+  year = "2014",
+  female_minor = as.numeric(gsub(",","",target[2,12])),
+  female_adult = as.numeric(gsub(",","",target[3,12])),
+  male_minor = as.numeric(gsub(",","",target[2,13])),
+  male_adult = as.numeric(gsub(",","",target[3,13])),
+  unknown_sex_minor = as.numeric(gsub(",","",target[2,14])),
+  unknown_sex_adult = as.numeric(gsub(",","",target[3,14])),
+  asian_minor = as.numeric(gsub(",","",target[2,16])),
+  asian_adult = as.numeric(gsub(",","",target[3,16])),
+  black_minor = as.numeric(gsub(",","",target[2,17])),
+  black_adult = as.numeric(gsub(",","",target[3,17])),
+  indian_minor = as.numeric(gsub(",","",target[2,18])),
+  indian_adult = as.numeric(gsub(",","",target[3,18])),
+  unknown_race_minor = as.numeric(gsub(",","",target[2,19])),
+  unknown_race_adult = as.numeric(gsub(",","",target[3,19])),
+  white_minor = as.numeric(gsub(",","",target[2,20])),
+  white_adult = as.numeric(gsub(",","",target[3,20]))
+  )
+
+target <- data.frame(missing_persons_stats_2013[4]) %>% t()
+missing_persons_entry_by_sex_race_age <- missing_persons_entry_by_sex_race_age %>% add_row(
+  year = "2013",
+  female_minor = as.numeric(gsub(",","",target[2,12])),
+  female_adult = as.numeric(gsub(",","",target[3,12])),
+  male_minor = as.numeric(gsub(",","",target[2,13])),
+  male_adult = as.numeric(gsub(",","",target[3,13])),
+  unknown_sex_minor = as.numeric(gsub(",","",target[2,14])),
+  unknown_sex_adult = as.numeric(gsub(",","",target[3,14])),
+  asian_minor = as.numeric(gsub(",","",target[2,16])),
+  asian_adult = as.numeric(gsub(",","",target[3,16])),
+  black_minor = as.numeric(gsub(",","",target[2,17])),
+  black_adult = as.numeric(gsub(",","",target[3,17])),
+  indian_minor = as.numeric(gsub(",","",target[2,18])),
+  indian_adult = as.numeric(gsub(",","",target[3,18])),
+  unknown_race_minor = as.numeric(gsub(",","",target[2,19])),
+  unknown_race_adult = as.numeric(gsub(",","",target[3,19])),
+  white_minor = as.numeric(gsub(",","",target[2,20])),
+  white_adult = as.numeric(gsub(",","",target[3,20]))
+  )
+
+target <- data.frame(missing_persons_stats_2012[4]) %>% t()
+missing_persons_entry_by_sex_race_age <- missing_persons_entry_by_sex_race_age %>% add_row(
+  year = "2012",
+  female_minor = as.numeric(gsub(",","",target[2,12])),
+  female_adult = as.numeric(gsub(",","",target[3,12])),
+  male_minor = as.numeric(gsub(",","",target[2,13])),
+  male_adult = as.numeric(gsub(",","",target[3,13])),
+  unknown_sex_minor = as.numeric(gsub(",","",target[2,14])),
+  unknown_sex_adult = as.numeric(gsub(",","",target[3,14])),
+  asian_minor = as.numeric(gsub(",","",target[2,16])),
+  asian_adult = as.numeric(gsub(",","",target[3,16])),
+  black_minor = as.numeric(gsub(",","",target[2,17])),
+  black_adult = as.numeric(gsub(",","",target[3,17])),
+  indian_minor = as.numeric(gsub(",","",target[2,18])),
+  indian_adult = as.numeric(gsub(",","",target[3,18])),
+  unknown_race_minor = as.numeric(gsub(",","",target[2,19])),
+  unknown_race_adult = as.numeric(gsub(",","",target[3,19])),
+  white_minor = as.numeric(gsub(",","",target[2,20])),
+  white_adult = as.numeric(gsub(",","",target[3,20]))
+  )
+
+target <- data.frame(missing_persons_stats_2011[4]) %>% t()
+missing_persons_entry_by_sex_race_age <- missing_persons_entry_by_sex_race_age %>% add_row(
+  year = "2011",
+  female_minor = as.numeric(gsub(",","",target[2,12])),
+  female_adult = as.numeric(gsub(",","",target[3,12])),
+  male_minor = as.numeric(gsub(",","",target[2,13])),
+  male_adult = as.numeric(gsub(",","",target[3,13])),
+  unknown_sex_minor = as.numeric(gsub(",","",target[2,14])),
+  unknown_sex_adult = as.numeric(gsub(",","",target[3,14])),
+  asian_minor = as.numeric(gsub(",","",target[2,16])),
+  asian_adult = as.numeric(gsub(",","",target[3,16])),
+  black_minor = as.numeric(gsub(",","",target[2,17])),
+  black_adult = as.numeric(gsub(",","",target[3,17])),
+  indian_minor = as.numeric(gsub(",","",target[2,18])),
+  indian_adult = as.numeric(gsub(",","",target[3,18])),
+  unknown_race_minor = as.numeric(gsub(",","",target[2,19])),
+  unknown_race_adult = as.numeric(gsub(",","",target[3,19])),
+  white_minor = as.numeric(gsub(",","",target[2,20])),
+  white_adult = as.numeric(gsub(",","",target[3,20]))
+  )
+
+target <- data.frame(missing_persons_stats_2010[4]) %>% t()
+missing_persons_entry_by_sex_race_age <- missing_persons_entry_by_sex_race_age %>% add_row(
+  year = "2010",
+  female_minor = as.numeric(gsub(",","",target[2,9])),
+  female_adult = as.numeric(gsub(",","",target[3,9])),
+  male_minor = as.numeric(gsub(",","",target[2,10])),
+  male_adult = as.numeric(gsub(",","",target[3,10])),
+  unknown_sex_minor = as.numeric(gsub(",","",target[2,11])),
+  unknown_sex_adult = as.numeric(gsub(",","",target[3,11])),
+  asian_minor = as.numeric(gsub(",","",target[2,13])),
+  asian_adult = as.numeric(gsub(",","",target[3,13])),
+  black_minor = as.numeric(gsub(",","",target[2,14])),
+  black_adult = as.numeric(gsub(",","",target[3,14])),
+  indian_minor = as.numeric(gsub(",","",target[2,15])),
+  indian_adult = as.numeric(gsub(",","",target[3,15])),
+  unknown_race_minor = as.numeric(gsub(",","",target[2,16])),
+  unknown_race_adult = as.numeric(gsub(",","",target[3,16])),
+  white_minor = as.numeric(gsub(",","",target[2,17])),
+  white_adult = as.numeric(gsub(",","",target[3,17]))
+  )
+
+target <- data.frame(missing_persons_stats_2009[4]) %>% t()
+missing_persons_entry_by_sex_race_age <- missing_persons_entry_by_sex_race_age %>% add_row(
+  year = "2009",
+  female_minor = as.numeric(gsub(",","",target[2,12])),
+  female_adult = as.numeric(gsub(",","",target[3,12])),
+  male_minor = as.numeric(gsub(",","",target[2,13])),
+  male_adult = as.numeric(gsub(",","",target[3,13])),
+  unknown_sex_minor = as.numeric(gsub(",","",target[2,14])),
+  unknown_sex_adult = as.numeric(gsub(",","",target[3,14])),
+  asian_minor = as.numeric(gsub(",","",target[2,16])),
+  asian_adult = as.numeric(gsub(",","",target[3,16])),
+  black_minor = as.numeric(gsub(",","",target[2,17])),
+  black_adult = as.numeric(gsub(",","",target[3,17])),
+  indian_minor = as.numeric(gsub(",","",target[2,18])),
+  indian_adult = as.numeric(gsub(",","",target[3,18])),
+  unknown_race_minor = as.numeric(gsub(",","",target[2,19])),
+  unknown_race_adult = as.numeric(gsub(",","",target[3,19])),
+  white_minor = as.numeric(gsub(",","",target[2,20])),
+  white_adult = as.numeric(gsub(",","",target[3,20]))
+  )
+
+target <- data.frame(missing_persons_stats_2008[4]) %>% t()
+missing_persons_entry_by_sex_race_age <- missing_persons_entry_by_sex_race_age %>% add_row(
+  year = "2008",
+  female_minor = as.numeric(gsub(",","",target[2,12])),
+  female_adult = as.numeric(gsub(",","",target[3,12])),
+  male_minor = as.numeric(gsub(",","",target[2,13])),
+  male_adult = as.numeric(gsub(",","",target[3,13])),
+  unknown_sex_minor = as.numeric(gsub(",","",target[2,14])),
+  unknown_sex_adult = as.numeric(gsub(",","",target[3,14])),
+  asian_minor = as.numeric(gsub(",","",target[2,16])),
+  asian_adult = as.numeric(gsub(",","",target[3,16])),
+  black_minor = as.numeric(gsub(",","",target[2,17])),
+  black_adult = as.numeric(gsub(",","",target[3,17])),
+  indian_minor = as.numeric(gsub(",","",target[2,18])),
+  indian_adult = as.numeric(gsub(",","",target[3,18])),
+  unknown_race_minor = as.numeric(gsub(",","",target[2,19])),
+  unknown_race_adult = as.numeric(gsub(",","",target[3,19])),
+  white_minor = as.numeric(gsub(",","",target[2,20])),
+  white_adult = as.numeric(gsub(",","",target[3,20]))
+  )
+
+target <- data.frame(missing_persons_stats_2007[4]) %>% t()
+missing_persons_entry_by_sex_race_age <- missing_persons_entry_by_sex_race_age %>% add_row(
+  year = "2007",
+  female_minor = as.numeric(gsub(",","",target[2,11])),
+  female_adult = as.numeric(gsub(",","",target[3,11])),
+  male_minor = as.numeric(gsub(",","",target[2,12])),
+  male_adult = as.numeric(gsub(",","",target[3,12])),
+  unknown_sex_minor = as.numeric(gsub(",","",target[2,13])),
+  unknown_sex_adult = as.numeric(gsub(",","",target[3,13])),
+  asian_minor = as.numeric(gsub(",","",target[2,15])),
+  asian_adult = as.numeric(gsub(",","",target[3,15])),
+  black_minor = as.numeric(gsub(",","",target[2,16])),
+  black_adult = as.numeric(gsub(",","",target[3,16])),
+  indian_minor = as.numeric(gsub(",","",target[2,17])),
+  indian_adult = as.numeric(gsub(",","",target[3,17])),
+  unknown_race_minor = as.numeric(gsub(",","",target[2,18])),
+  unknown_race_adult = as.numeric(gsub(",","",target[3,18])),
+  white_minor = as.numeric(gsub(",","",target[2,19])),
+  white_adult = as.numeric(gsub(",","",target[3,19]))
+  )
+
+missing_persons_entry_by_sex_race_age
+```
+
+After starting my analysis, I re-scraped the three most recent years because it had the most intersectional data. This includes categories provided by the FBI:
+
+Disability: a person of any age who is missing and under proven physical/mental disability or is senile, thereby subjecting him/ herself or others to personal and immediate danger.
+
+Endangered: a person of any age who is missing under circumstances indicating that his/her physical safety may be in danger.
+
+Involuntary: a person of any age who is missing under circumstances indicating that the disappearance may not have been voluntary, i.e., abduction or kidnapping.
+
+Juvenile: a person who is missing and not declared emancipated as defined by the laws of his/her state of residence and does not meet any of the entry criteria set forth in the Disability, Endangered, Involuntary, or Catastrophe Victim categories.
+
+Catastrophe Victim: a person of any age who is missing after a catastrophe.
+
+Other: a person not meeting the criteria for entry in any other category who is missing and 1) for whom there is a reasonable concern for his/her safety or 2) a person who is under age 21 and declared emancipated by the laws of his/her state of residence. In accordance with 34 U.S.C. § 41307(a), agencies are required to enter records into the NCIC Missing Person File for missing individuals under the age of 21
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+url <- c("https://www.fbi.gov/file-repository/", "year here", "-ncic-missing-person-and-unidentified-person-statistics.pdf")
+years <- seq(2020, 2022)
+
+for (year in years){
+  pdf_path <- paste0(url[1], year, url[3])
+  tables <- extract_tables(pdf_path, output = "data.frame", method = "stream")
+  assign(paste0("missing_persons_stats_", year), tables)
+}
+
+
+intersectional_missing_persons <- tibble(
+  year = character(),
+  race = character(),
+  sex = character(),
+  age = character(),
+  cat = character(),
+  value = numeric())
+
+target <- data.frame(missing_persons_stats_2022[3]) %>% 
+  separate(col = 6, into = c("one", "two", "three", "four", "five"), sep=" ")
+
+intersectional_missing_persons <- intersectional_missing_persons %>% 
+  add_row (year = "2022", race = "asian", sex = "female", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,2]))) %>%
+  add_row (year = "2022", race = "asian", sex = "female", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,2]))) %>%
+  add_row (year = "2022", race = "black", sex = "female", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,3]))) %>%
+  add_row (year = "2022", race = "black", sex = "female", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,3]))) %>%
+  add_row (year = "2022", race = "indian", sex = "female", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,4]))) %>%
+  add_row (year = "2022", race = "indian", sex = "female", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,4]))) %>%
+  add_row (year = "2022", race = "unknown", sex = "female", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,5]))) %>%
+  add_row (year = "2022", race = "unknown", sex = "female", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,5]))) %>%
+  add_row (year = "2022", race = "white", sex = "female", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,6]))) %>%
+  add_row (year = "2022", race = "white", sex = "female", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,6]))) %>%
+  add_row (year = "2022", race = "asian", sex = "male", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,7]))) %>%
+  add_row (year = "2022", race = "asian", sex = "male", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,7]))) %>%
+  add_row (year = "2022", race = "black", sex = "male", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,8]))) %>%
+  add_row (year = "2022", race = "black", sex = "male", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,8]))) %>%
+  add_row (year = "2022", race = "indian", sex = "male", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,9]))) %>%
+  add_row (year = "2022", race = "indian", sex = "male", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,9]))) %>%
+  add_row (year = "2022", race = "unknown", sex = "male", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,10]))) %>%
+  add_row (year = "2022", race = "unknown", sex = "male", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,10]))) %>%
+  add_row (year = "2022", race = "white", sex = "male", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,11]))) %>%
+  add_row (year = "2022", race = "white", sex = "male", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,11]))) %>%
+  add_row (year = "2022", race = "asian", sex = "unknown", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,12]))) %>%
+  add_row (year = "2022", race = "asian", sex = "unknown", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,12]))) %>%
+  add_row (year = "2022", race = "black", sex = "unknown", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,13]))) %>%
+  add_row (year = "2022", race = "black", sex = "unknown", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,13]))) %>%
+  add_row (year = "2022", race = "indian", sex = "unknown", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,14]))) %>%
+  add_row (year = "2022", race = "indian", sex = "unknown", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,14]))) %>%
+  add_row (year = "2022", race = "unknown", sex = "unknown", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,15]))) %>%
+  add_row (year = "2022", race = "unknown", sex = "unknown", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,15]))) %>%
+  add_row (year = "2022", race = "white", sex = "unknown", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,16]))) %>%
+  add_row (year = "2022", race = "white", sex = "unknown", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,16])))
+
+target <- data.frame(missing_persons_stats_2022[5]) %>% 
+  separate(col = 6, into = c("one", "two", "three", "four", "five"), sep=" ")
+
+intersectional_missing_persons <- intersectional_missing_persons %>% 
+  add_row (year = "2022", race = "asian", sex = "female", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[3,2]))) %>%
+  add_row (year = "2022", race = "black", sex = "female", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[3,3]))) %>%
+  add_row (year = "2022", race = "indian", sex = "female", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[3,4]))) %>%
+  add_row (year = "2022", race = "unknown", sex = "female", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[3,5]))) %>%
+  add_row (year = "2022", race = "white", sex = "female", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[3,6]))) %>%
+  add_row (year = "2022", race = "asian", sex = "male", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[3,7]))) %>%
+  add_row (year = "2022", race = "black", sex = "male", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[3,8]))) %>%
+  add_row (year = "2022", race = "indian", sex = "male", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[3,9]))) %>%
+  add_row (year = "2022", race = "unknown", sex = "male", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[3,10]))) %>%
+  add_row (year = "2022", race = "white", sex = "male", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[3,11]))) %>%
+  add_row (year = "2022", race = "asian", sex = "unknown", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[3,12]))) %>%
+  add_row (year = "2022", race = "black", sex = "unknown", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[3,13]))) %>%
+  add_row (year = "2022", race = "indian", sex = "unknown", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[3,14]))) %>%
+  add_row (year = "2022", race = "unknown", sex = "unknown", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[3,15]))) %>%
+  add_row (year = "2022", race = "white", sex = "unknown", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[3,16])))
+
+target <- data.frame(missing_persons_stats_2022[8]) %>%
+   separate(col = 4, into = c("one", "two"), sep=" ") %>% 
+   separate(col = 6, into = c("one", "two", "three", "four", "five"), sep=" ") %>%
+   separate(col = 12, into = c("one", "two"), sep=" ")
+
+intersectional_missing_persons <- intersectional_missing_persons %>% 
+  add_row (year = "2022", race = "", sex = "female", age = "minor", cat = "juv", value = as.numeric(gsub(",","",target[3,2]))) %>%
+  add_row (year = "2022", race = "", sex = "female", age = "adult", cat = "juv", value = as.numeric(gsub(",","",target[4,2]))) %>%
+  add_row (year = "2022", race = "", sex = "female", age = "minor", cat = "end", value = as.numeric(gsub(",","",target[3,3]))) %>%
+  add_row (year = "2022", race = "", sex = "female", age = "adult", cat = "end", value = as.numeric(gsub(",","",target[4,3]))) %>%
+  add_row (year = "2022", race = "", sex = "female", age = "minor", cat = "inv", value = as.numeric(gsub(",","",target[3,4]))) %>%
+  add_row (year = "2022", race = "", sex = "female", age = "adult", cat = "inv", value = as.numeric(gsub(",","",target[4,4]))) %>%
+  add_row (year = "2022", race = "", sex = "female", age = "minor", cat = "dis", value = as.numeric(gsub(",","",target[3,5]))) %>%
+  add_row (year = "2022", race = "", sex = "female", age = "adult", cat = "dis", value = as.numeric(gsub(",","",target[4,5]))) %>%
+  add_row (year = "2022", race = "", sex = "female", age = "minor", cat = "cat", value = as.numeric(gsub(",","",target[3,6]))) %>%
+  add_row (year = "2022", race = "", sex = "female", age = "adult", cat = "cat", value = as.numeric(gsub(",","",target[4,6]))) %>%
+  add_row (year = "2022", race = "", sex = "female", age = "minor", cat = "other", value = as.numeric(gsub(",","",target[3,7]))) %>%
+  add_row (year = "2022", race = "", sex = "female", age = "adult", cat = "other", value = as.numeric(gsub(",","",target[4,7]))) %>%
+  add_row (year = "2022", race = "", sex = "male", age = "minor", cat = "juv", value = as.numeric(gsub(",","",target[3,8]))) %>%
+  add_row (year = "2022", race = "", sex = "male", age = "adult", cat = "juv", value = as.numeric(gsub(",","",target[4,8]))) %>%
+  add_row (year = "2022", race = "", sex = "male", age = "minor", cat = "end", value = as.numeric(gsub(",","",target[3,9]))) %>%
+  add_row (year = "2022", race = "", sex = "male", age = "adult", cat = "end", value = as.numeric(gsub(",","",target[4,9]))) %>%
+  add_row (year = "2022", race = "", sex = "male", age = "minor", cat = "inv", value = as.numeric(gsub(",","",target[3,10]))) %>%
+  add_row (year = "2022", race = "", sex = "male", age = "adult", cat = "inv", value = as.numeric(gsub(",","",target[4,10]))) %>%
+  add_row (year = "2022", race = "", sex = "male", age = "minor", cat = "dis", value = as.numeric(gsub(",","",target[3,11]))) %>%
+  add_row (year = "2022", race = "", sex = "male", age = "adult", cat = "dis", value = as.numeric(gsub(",","",target[4,11]))) %>%
+  add_row (year = "2022", race = "", sex = "male", age = "minor", cat = "cat", value = as.numeric(gsub(",","",target[3,12]))) %>%
+  add_row (year = "2022", race = "", sex = "male", age = "adult", cat = "cat", value = as.numeric(gsub(",","",target[4,12]))) %>%
+  add_row (year = "2022", race = "", sex = "male", age = "minor", cat = "other", value = as.numeric(gsub(",","",target[3,13]))) %>%
+  add_row (year = "2022", race = "", sex = "male", age = "adult", cat = "other", value = as.numeric(gsub(",","",target[4,13]))) %>%
+  add_row (year = "2022", race = "", sex = "unknown", age = "minor", cat = "juv", value = as.numeric(gsub(",","",target[3,14]))) %>%
+  add_row (year = "2022", race = "", sex = "unknown", age = "adult", cat = "juv", value = as.numeric(gsub(",","",target[4,14]))) %>%
+  add_row (year = "2022", race = "", sex = "unknown", age = "minor", cat = "end", value = as.numeric(gsub(",","",target[3,15]))) %>%
+  add_row (year = "2022", race = "", sex = "unknown", age = "adult", cat = "end", value = as.numeric(gsub(",","",target[4,15]))) %>%
+  add_row (year = "2022", race = "", sex = "unknown", age = "minor", cat = "inv", value = as.numeric(gsub(",","",target[3,16]))) %>%
+  add_row (year = "2022", race = "", sex = "unknown", age = "adult", cat = "inv", value = as.numeric(gsub(",","",target[4,16]))) %>%
+  add_row (year = "2022", race = "", sex = "unknown", age = "minor", cat = "dis", value = as.numeric(gsub(",","",target[3,17]))) %>%
+  add_row (year = "2022", race = "", sex = "unknown", age = "adult", cat = "dis", value = as.numeric(gsub(",","",target[4,17]))) %>%
+  add_row (year = "2022", race = "", sex = "unknown", age = "minor", cat = "cat", value = as.numeric(gsub(",","",target[3,18]))) %>%
+  add_row (year = "2022", race = "", sex = "unknown", age = "adult", cat = "cat", value = as.numeric(gsub(",","",target[4,18]))) %>%
+  add_row (year = "2022", race = "", sex = "unknown", age = "minor", cat = "other", value = as.numeric(gsub(",","",target[3,19]))) %>%
+  add_row (year = "2022", race = "", sex = "unknown", age = "adult", cat = "other", value = as.numeric(gsub(",","",target[4,19]))) 
+
+target <- data.frame(missing_persons_stats_2022[10]) %>% 
+  separate(col = 7, into = c("one", "two", "three", "four", "five", "six"), sep=" ")
+
+  intersectional_missing_persons <- intersectional_missing_persons %>% 
+  add_row (year = "2022", race = "", sex = "female", age = "no_dob", cat = "juv", value = as.numeric(gsub(",","",target[3,2]))) %>%
+  add_row (year = "2022", race = "", sex = "female", age = "no_dob", cat = "end", value = as.numeric(gsub(",","",target[3,3]))) %>%
+  add_row (year = "2022", race = "", sex = "female", age = "no_dob", cat = "inv", value = as.numeric(gsub(",","",target[3,4]))) %>%
+  add_row (year = "2022", race = "", sex = "female", age = "no_dob", cat = "dis", value = as.numeric(gsub(",","",target[3,5]))) %>%
+  add_row (year = "2022", race = "", sex = "female", age = "no_dob", cat = "cat", value = as.numeric(gsub(",","",target[3,6]))) %>%
+  add_row (year = "2022", race = "", sex = "female", age = "no_dob", cat = "other", value = as.numeric(gsub(",","",target[3,7]))) %>%
+  add_row (year = "2022", race = "", sex = "male", age = "no_dob", cat = "juv", value = as.numeric(gsub(",","",target[3,8]))) %>%
+  add_row (year = "2022", race = "", sex = "male", age = "no_dob", cat = "end", value = as.numeric(gsub(",","",target[3,9]))) %>%
+  add_row (year = "2022", race = "", sex = "male", age = "no_dob", cat = "inv", value = as.numeric(gsub(",","",target[3,10]))) %>%
+  add_row (year = "2022", race = "", sex = "male", age = "no_dob", cat = "dis", value = as.numeric(gsub(",","",target[3,11]))) %>%
+  add_row (year = "2022", race = "", sex = "male", age = "no_dob", cat = "cat", value = as.numeric(gsub(",","",target[3,12]))) %>%
+  add_row (year = "2022", race = "", sex = "male", age = "no_dob", cat = "other", value = as.numeric(gsub(",","",target[3,13]))) %>%
+  add_row (year = "2022", race = "", sex = "unknown", age = "no_dob", cat = "juv", value = as.numeric(gsub(",","",target[3,14]))) %>%
+  add_row (year = "2022", race = "", sex = "unknown", age = "no_dob", cat = "end", value = as.numeric(gsub(",","",target[3,15]))) %>%
+  add_row (year = "2022", race = "", sex = "unknown", age = "no_dob", cat = "inv", value = as.numeric(gsub(",","",target[3,16]))) %>%
+  add_row (year = "2022", race = "", sex = "unknown", age = "no_dob", cat = "dis", value = as.numeric(gsub(",","",target[3,17]))) %>%
+  add_row (year = "2022", race = "", sex = "unknown", age = "no_dob", cat = "cat", value = as.numeric(gsub(",","",target[3,18]))) %>%
+  add_row (year = "2022", race = "", sex = "unknown", age = "no_dob", cat = "other", value = as.numeric(gsub(",","",target[3,19])))
+
+
+target <- data.frame(missing_persons_stats_2022[13]) %>%
+   separate(col = 3, into = c("one", "two"), sep=" ") %>% 
+   separate(col = 9, into = c("three", "four"), sep=" ")
+
+intersectional_missing_persons <- intersectional_missing_persons %>% 
+  add_row (year = "2022", race = "asian", sex = "female", age = "", cat = "juv", value = as.numeric(gsub(",","",target[2,2]))) %>%
+  add_row (year = "2022", race = "asian", sex = "male", age = "", cat = "juv", value = as.numeric(gsub(",","",target[3,2]))) %>%
+  add_row (year = "2022", race = "asian", sex = "unknown", age = "", cat = "juv", value = as.numeric(gsub(",","",target[4,2]))) %>%
+  add_row (year = "2022", race = "black", sex = "female", age = "", cat = "juv", value = as.numeric(gsub(",","",target[2,3]))) %>%
+  add_row (year = "2022", race = "black", sex = "male", age = "", cat = "juv", value = as.numeric(gsub(",","",target[3,3]))) %>%
+  add_row (year = "2022", race = "black", sex = "unknown", age = "", cat = "juv", value = as.numeric(gsub(",","",target[4,3]))) %>%
+  add_row (year = "2022", race = "indian", sex = "female", age = "", cat = "juv", value = as.numeric(gsub(",","",target[2,4]))) %>%
+  add_row (year = "2022", race = "indian", sex = "male", age = "", cat = "juv", value = as.numeric(gsub(",","",target[3,4]))) %>%
+  add_row (year = "2022", race = "indian", sex = "unknown", age = "", cat = "juv", value = as.numeric(gsub(",","",target[4,4]))) %>%
+  add_row (year = "2022", race = "unknown", sex = "female", age = "", cat = "juv", value = as.numeric(gsub(",","",target[2,5]))) %>%
+  add_row (year = "2022", race = "unknown", sex = "male", age = "", cat = "juv", value = as.numeric(gsub(",","",target[3,5]))) %>%
+  add_row (year = "2022", race = "unknown", sex = "unknown", age = "", cat = "juv", value = as.numeric(gsub(",","",target[4,5]))) %>%
+  add_row (year = "2022", race = "white", sex = "female", age = "", cat = "juv", value = as.numeric(gsub(",","",target[2,6]))) %>%
+  add_row (year = "2022", race = "white", sex = "male", age = "", cat = "juv", value = as.numeric(gsub(",","",target[3,6]))) %>%
+  add_row (year = "2022", race = "white", sex = "unknown", age = "", cat = "juv", value = as.numeric(gsub(",","",target[4,6]))) %>%
+  add_row (year = "2022", race = "asian", sex = "female", age = "", cat = "end", value = as.numeric(gsub(",","",target[2,8]))) %>%
+  add_row (year = "2022", race = "asian", sex = "male", age = "", cat = "end", value = as.numeric(gsub(",","",target[3,8]))) %>%
+  add_row (year = "2022", race = "asian", sex = "unknown", age = "", cat = "end", value = as.numeric(gsub(",","",target[4,8]))) %>%
+  add_row (year = "2022", race = "black", sex = "female", age = "", cat = "end", value = as.numeric(gsub(",","",target[2,9]))) %>%
+  add_row (year = "2022", race = "black", sex = "male", age = "", cat = "end", value = as.numeric(gsub(",","",target[3,9]))) %>%
+  add_row (year = "2022", race = "black", sex = "unknown", age = "", cat = "end", value = as.numeric(gsub(",","",target[4,9]))) %>%
+  add_row (year = "2022", race = "indian", sex = "female", age = "", cat = "end", value = as.numeric(gsub(",","",target[2,10]))) %>%
+  add_row (year = "2022", race = "indian", sex = "male", age = "", cat = "end", value = as.numeric(gsub(",","",target[3,10]))) %>%
+  add_row (year = "2022", race = "indian", sex = "unknown", age = "", cat = "end", value = as.numeric(gsub(",","",target[4,10]))) %>%
+  add_row (year = "2022", race = "unknown", sex = "female", age = "", cat = "end", value = as.numeric(gsub(",","",target[2,11]))) %>%
+  add_row (year = "2022", race = "unknown", sex = "male", age = "", cat = "end", value = as.numeric(gsub(",","",target[3,11]))) %>%
+  add_row (year = "2022", race = "unknown", sex = "unknown", age = "", cat = "end", value = as.numeric(gsub(",","",target[4,11]))) %>%
+  add_row (year = "2022", race = "white", sex = "female", age = "", cat = "end", value = as.numeric(gsub(",","",target[2,12]))) %>%
+  add_row (year = "2022", race = "white", sex = "male", age = "", cat = "end", value = as.numeric(gsub(",","",target[3,12]))) %>%
+  add_row (year = "2022", race = "white", sex = "unknown", age = "", cat = "end", value = as.numeric(gsub(",","",target[4,12])))
+
+target <- data.frame(missing_persons_stats_2022[14]) %>%
+   separate(col = 3, into = c("one", "two"), sep=" ") %>% 
+   separate(col = 9, into = c("three", "four"), sep=" ")
+
+intersectional_missing_persons <- intersectional_missing_persons %>% 
+  add_row (year = "2022", race = "asian", sex = "female", age = "", cat = "inv", value = as.numeric(gsub(",","",target[2,2]))) %>%
+  add_row (year = "2022", race = "asian", sex = "male", age = "", cat = "inv", value = as.numeric(gsub(",","",target[3,2]))) %>%
+  add_row (year = "2022", race = "asian", sex = "unknown", age = "", cat = "inv", value = as.numeric(gsub(",","",target[4,2]))) %>%
+  add_row (year = "2022", race = "black", sex = "female", age = "", cat = "inv", value = as.numeric(gsub(",","",target[2,3]))) %>%
+  add_row (year = "2022", race = "black", sex = "male", age = "", cat = "inv", value = as.numeric(gsub(",","",target[3,3]))) %>%
+  add_row (year = "2022", race = "black", sex = "unknown", age = "", cat = "inv", value = as.numeric(gsub(",","",target[4,3]))) %>%
+  add_row (year = "2022", race = "indian", sex = "female", age = "", cat = "inv", value = as.numeric(gsub(",","",target[2,4]))) %>%
+  add_row (year = "2022", race = "indian", sex = "male", age = "", cat = "inv", value = as.numeric(gsub(",","",target[3,4]))) %>%
+  add_row (year = "2022", race = "indian", sex = "unknown", age = "", cat = "inv", value = as.numeric(gsub(",","",target[4,4]))) %>%
+  add_row (year = "2022", race = "unknown", sex = "female", age = "", cat = "inv", value = as.numeric(gsub(",","",target[2,5]))) %>%
+  add_row (year = "2022", race = "unknown", sex = "male", age = "", cat = "inv", value = as.numeric(gsub(",","",target[3,5]))) %>%
+  add_row (year = "2022", race = "unknown", sex = "unknown", age = "", cat = "inv", value = as.numeric(gsub(",","",target[4,5]))) %>%
+  add_row (year = "2022", race = "white", sex = "female", age = "", cat = "inv", value = as.numeric(gsub(",","",target[2,6]))) %>%
+  add_row (year = "2022", race = "white", sex = "male", age = "", cat = "inv", value = as.numeric(gsub(",","",target[3,6]))) %>%
+  add_row (year = "2022", race = "white", sex = "unknown", age = "", cat = "inv", value = as.numeric(gsub(",","",target[4,6]))) %>%
+  add_row (year = "2022", race = "asian", sex = "female", age = "", cat = "dis", value = as.numeric(gsub(",","",target[2,8]))) %>%
+  add_row (year = "2022", race = "asian", sex = "male", age = "", cat = "dis", value = as.numeric(gsub(",","",target[3,8]))) %>%
+  add_row (year = "2022", race = "asian", sex = "unknown", age = "", cat = "dis", value = as.numeric(gsub(",","",target[4,8]))) %>%
+  add_row (year = "2022", race = "black", sex = "female", age = "", cat = "dis", value = as.numeric(gsub(",","",target[2,9]))) %>%
+  add_row (year = "2022", race = "black", sex = "male", age = "", cat = "dis", value = as.numeric(gsub(",","",target[3,9]))) %>%
+  add_row (year = "2022", race = "black", sex = "unknown", age = "", cat = "dis", value = as.numeric(gsub(",","",target[4,9]))) %>%
+  add_row (year = "2022", race = "indian", sex = "female", age = "", cat = "dis", value = as.numeric(gsub(",","",target[2,10]))) %>%
+  add_row (year = "2022", race = "indian", sex = "male", age = "", cat = "dis", value = as.numeric(gsub(",","",target[3,10]))) %>%
+  add_row (year = "2022", race = "indian", sex = "unknown", age = "", cat = "dis", value = as.numeric(gsub(",","",target[4,10]))) %>%
+  add_row (year = "2022", race = "unknown", sex = "female", age = "", cat = "dis", value = as.numeric(gsub(",","",target[2,11]))) %>%
+  add_row (year = "2022", race = "unknown", sex = "male", age = "", cat = "dis", value = as.numeric(gsub(",","",target[3,11]))) %>%
+  add_row (year = "2022", race = "unknown", sex = "unknown", age = "", cat = "dis", value = as.numeric(gsub(",","",target[4,11]))) %>%
+  add_row (year = "2022", race = "white", sex = "female", age = "", cat = "dis", value = as.numeric(gsub(",","",target[2,12]))) %>%
+  add_row (year = "2022", race = "white", sex = "male", age = "", cat = "dis", value = as.numeric(gsub(",","",target[3,12]))) %>%
+  add_row (year = "2022", race = "white", sex = "unknown", age = "", cat = "dis", value = as.numeric(gsub(",","",target[4,12])))
+
+target <- data.frame(missing_persons_stats_2022[15]) %>%
+   separate(col = 2, into = c("one", "two", "three", "four"), sep=" ") %>%
+   separate(col = 9, into = c("five", "six"), sep=" ")
+ 
+intersectional_missing_persons <- intersectional_missing_persons %>% 
+  add_row (year = "2022", race = "asian", sex = "female", age = "", cat = "cat", value = as.numeric(gsub(",","",target[2,2]))) %>%
+  add_row (year = "2022", race = "asian", sex = "male", age = "", cat = "cat", value = as.numeric(gsub(",","",target[3,2]))) %>%
+  add_row (year = "2022", race = "asian", sex = "unknown", age = "", cat = "cat", value = as.numeric(gsub(",","",target[4,2]))) %>%
+  add_row (year = "2022", race = "black", sex = "female", age = "", cat = "cat", value = as.numeric(gsub(",","",target[2,3]))) %>%
+  add_row (year = "2022", race = "black", sex = "male", age = "", cat = "cat", value = as.numeric(gsub(",","",target[3,3]))) %>%
+  add_row (year = "2022", race = "black", sex = "unknown", age = "", cat = "cat", value = as.numeric(gsub(",","",target[4,3]))) %>%
+  add_row (year = "2022", race = "indian", sex = "female", age = "", cat = "cat", value = as.numeric(gsub(",","",target[2,4]))) %>%
+  add_row (year = "2022", race = "indian", sex = "male", age = "", cat = "cat", value = as.numeric(gsub(",","",target[3,4]))) %>%
+  add_row (year = "2022", race = "indian", sex = "unknown", age = "", cat = "cat", value = as.numeric(gsub(",","",target[4,4]))) %>%
+  add_row (year = "2022", race = "unknown", sex = "female", age = "", cat = "cat", value = as.numeric(gsub(",","",target[2,5]))) %>%
+  add_row (year = "2022", race = "unknown", sex = "male", age = "", cat = "cat", value = as.numeric(gsub(",","",target[3,5]))) %>%
+  add_row (year = "2022", race = "unknown", sex = "unknown", age = "", cat = "cat", value = as.numeric(gsub(",","",target[4,5]))) %>%
+  add_row (year = "2022", race = "white", sex = "female", age = "", cat = "cat", value = as.numeric(gsub(",","",target[2,6]))) %>%
+  add_row (year = "2022", race = "white", sex = "male", age = "", cat = "cat", value = as.numeric(gsub(",","",target[3,6]))) %>%
+  add_row (year = "2022", race = "white", sex = "unknown", age = "", cat = "cat", value = as.numeric(gsub(",","",target[4,6]))) %>%
+  add_row (year = "2022", race = "asian", sex = "female", age = "", cat = "other", value = as.numeric(gsub(",","",target[2,8]))) %>%
+  add_row (year = "2022", race = "asian", sex = "male", age = "", cat = "other", value = as.numeric(gsub(",","",target[3,8]))) %>%
+  add_row (year = "2022", race = "asian", sex = "unknown", age = "", cat = "other", value = as.numeric(gsub(",","",target[4,8]))) %>%
+  add_row (year = "2022", race = "black", sex = "female", age = "", cat = "other", value = as.numeric(gsub(",","",target[2,9]))) %>%
+  add_row (year = "2022", race = "black", sex = "male", age = "", cat = "other", value = as.numeric(gsub(",","",target[3,9]))) %>%
+  add_row (year = "2022", race = "black", sex = "unknown", age = "", cat = "other", value = as.numeric(gsub(",","",target[4,9]))) %>%
+  add_row (year = "2022", race = "indian", sex = "female", age = "", cat = "other", value = as.numeric(gsub(",","",target[2,10]))) %>%
+  add_row (year = "2022", race = "indian", sex = "male", age = "", cat = "other", value = as.numeric(gsub(",","",target[3,10]))) %>%
+  add_row (year = "2022", race = "indian", sex = "unknown", age = "", cat = "other", value = as.numeric(gsub(",","",target[4,10]))) %>%
+  add_row (year = "2022", race = "unknown", sex = "female", age = "", cat = "other", value = as.numeric(gsub(",","",target[2,11]))) %>%
+  add_row (year = "2022", race = "unknown", sex = "male", age = "", cat = "other", value = as.numeric(gsub(",","",target[3,11]))) %>%
+  add_row (year = "2022", race = "unknown", sex = "unknown", age = "", cat = "other", value = as.numeric(gsub(",","",target[4,11]))) %>%
+  add_row (year = "2022", race = "white", sex = "female", age = "", cat = "other", value = as.numeric(gsub(",","",target[2,12]))) %>%
+  add_row (year = "2022", race = "white", sex = "male", age = "", cat = "other", value = as.numeric(gsub(",","",target[3,12]))) %>%
+  add_row (year = "2022", race = "white", sex = "unknown", age = "", cat = "other", value = as.numeric(gsub(",","",target[4,12])))
+
+target <- data.frame(missing_persons_stats_2021[4]) %>% 
+  separate(col = 4, into = c("one", "two", "three", "four", "five", "six", "seven", "eight", "nine"), sep=" ")
+
+intersectional_missing_persons <- intersectional_missing_persons %>% 
+  add_row (year = "2021", race = "asian", sex = "female", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,2]))) %>%
+  add_row (year = "2021", race = "asian", sex = "female", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,2]))) %>%
+  add_row (year = "2021", race = "black", sex = "female", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,3]))) %>%
+  add_row (year = "2021", race = "black", sex = "female", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,3]))) %>%
+  add_row (year = "2021", race = "indian", sex = "female", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,4]))) %>%
+  add_row (year = "2021", race = "indian", sex = "female", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,4]))) %>%
+  add_row (year = "2021", race = "unknown", sex = "female", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,5]))) %>%
+  add_row (year = "2021", race = "unknown", sex = "female", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,5]))) %>%
+  add_row (year = "2021", race = "white", sex = "female", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,6]))) %>%
+  add_row (year = "2021", race = "white", sex = "female", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,6]))) %>%
+  add_row (year = "2021", race = "asian", sex = "male", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,7]))) %>%
+  add_row (year = "2021", race = "asian", sex = "male", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,7]))) %>%
+  add_row (year = "2021", race = "black", sex = "male", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,8]))) %>%
+  add_row (year = "2021", race = "black", sex = "male", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,8]))) %>%
+  add_row (year = "2021", race = "indian", sex = "male", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,9]))) %>%
+  add_row (year = "2021", race = "indian", sex = "male", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,9]))) %>%
+  add_row (year = "2021", race = "unknown", sex = "male", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,10]))) %>%
+  add_row (year = "2021", race = "unknown", sex = "male", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,10]))) %>%
+  add_row (year = "2021", race = "white", sex = "male", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,11]))) %>%
+  add_row (year = "2021", race = "white", sex = "male", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,11]))) %>%
+  add_row (year = "2021", race = "asian", sex = "unknown", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,12]))) %>%
+  add_row (year = "2021", race = "asian", sex = "unknown", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,12]))) %>%
+  add_row (year = "2021", race = "black", sex = "unknown", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,13]))) %>%
+  add_row (year = "2021", race = "black", sex = "unknown", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,13]))) %>%
+  add_row (year = "2021", race = "indian", sex = "unknown", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,14]))) %>%
+  add_row (year = "2021", race = "indian", sex = "unknown", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,14]))) %>%
+  add_row (year = "2021", race = "unknown", sex = "unknown", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,15]))) %>%
+  add_row (year = "2021", race = "unknown", sex = "unknown", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,15]))) %>%
+  add_row (year = "2021", race = "white", sex = "unknown", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,16]))) %>%
+  add_row (year = "2021", race = "white", sex = "unknown", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,16])))
+
+target <- data.frame(missing_persons_stats_2021[6]) %>% 
+  separate(col = 6, into = c("one", "two", "three", "four", "five"), sep=" ")
+
+intersectional_missing_persons <- intersectional_missing_persons %>% 
+  add_row (year = "2021", race = "asian", sex = "female", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[3,2]))) %>%
+  add_row (year = "2021", race = "black", sex = "female", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[3,3]))) %>%
+  add_row (year = "2021", race = "indian", sex = "female", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[3,4]))) %>%
+  add_row (year = "2021", race = "unknown", sex = "female", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[3,5]))) %>%
+  add_row (year = "2021", race = "white", sex = "female", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[3,6]))) %>%
+  add_row (year = "2021", race = "asian", sex = "male", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[3,7]))) %>%
+  add_row (year = "2021", race = "black", sex = "male", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[3,8]))) %>%
+  add_row (year = "2021", race = "indian", sex = "male", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[3,9]))) %>%
+  add_row (year = "2021", race = "unknown", sex = "male", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[3,10]))) %>%
+  add_row (year = "2021", race = "white", sex = "male", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[3,11]))) %>%
+  add_row (year = "2021", race = "asian", sex = "unknown", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[3,12]))) %>%
+  add_row (year = "2021", race = "black", sex = "unknown", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[3,13]))) %>%
+  add_row (year = "2021", race = "indian", sex = "unknown", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[3,14]))) %>%
+  add_row (year = "2021", race = "unknown", sex = "unknown", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[3,15]))) %>%
+  add_row (year = "2021", race = "white", sex = "unknown", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[3,16])))
+
+target <- data.frame(missing_persons_stats_2021[9]) %>%
+   separate(col = 4, into = c("one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"), sep=" ") %>%
+   separate(col = 16, into = c("one", "two"), sep=" ")
+
+intersectional_missing_persons <- intersectional_missing_persons %>% 
+  add_row (year = "2021", race = "", sex = "female", age = "minor", cat = "juv", value = as.numeric(gsub(",","",target[3,2]))) %>%
+  add_row (year = "2021", race = "", sex = "female", age = "adult", cat = "juv", value = as.numeric(gsub(",","",target[4,2]))) %>%
+  add_row (year = "2021", race = "", sex = "female", age = "minor", cat = "end", value = as.numeric(gsub(",","",target[3,3]))) %>%
+  add_row (year = "2021", race = "", sex = "female", age = "adult", cat = "end", value = as.numeric(gsub(",","",target[4,3]))) %>%
+  add_row (year = "2021", race = "", sex = "female", age = "minor", cat = "inv", value = as.numeric(gsub(",","",target[3,4]))) %>%
+  add_row (year = "2021", race = "", sex = "female", age = "adult", cat = "inv", value = as.numeric(gsub(",","",target[4,4]))) %>%
+  add_row (year = "2021", race = "", sex = "female", age = "minor", cat = "dis", value = as.numeric(gsub(",","",target[3,5]))) %>%
+  add_row (year = "2021", race = "", sex = "female", age = "adult", cat = "dis", value = as.numeric(gsub(",","",target[4,5]))) %>%
+  add_row (year = "2021", race = "", sex = "female", age = "minor", cat = "cat", value = as.numeric(gsub(",","",target[3,6]))) %>%
+  add_row (year = "2021", race = "", sex = "female", age = "adult", cat = "cat", value = as.numeric(gsub(",","",target[4,6]))) %>%
+  add_row (year = "2021", race = "", sex = "female", age = "minor", cat = "other", value = as.numeric(gsub(",","",target[3,7]))) %>%
+  add_row (year = "2021", race = "", sex = "female", age = "adult", cat = "other", value = as.numeric(gsub(",","",target[4,7]))) %>%
+  add_row (year = "2021", race = "", sex = "male", age = "minor", cat = "juv", value = as.numeric(gsub(",","",target[3,8]))) %>%
+  add_row (year = "2021", race = "", sex = "male", age = "adult", cat = "juv", value = as.numeric(gsub(",","",target[4,8]))) %>%
+  add_row (year = "2021", race = "", sex = "male", age = "minor", cat = "end", value = as.numeric(gsub(",","",target[3,9]))) %>%
+  add_row (year = "2021", race = "", sex = "male", age = "adult", cat = "end", value = as.numeric(gsub(",","",target[4,9]))) %>%
+  add_row (year = "2021", race = "", sex = "male", age = "minor", cat = "inv", value = as.numeric(gsub(",","",target[3,10]))) %>%
+  add_row (year = "2021", race = "", sex = "male", age = "adult", cat = "inv", value = as.numeric(gsub(",","",target[4,10]))) %>%
+  add_row (year = "2021", race = "", sex = "male", age = "minor", cat = "dis", value = as.numeric(gsub(",","",target[3,11]))) %>%
+  add_row (year = "2021", race = "", sex = "male", age = "adult", cat = "dis", value = as.numeric(gsub(",","",target[4,11]))) %>%
+  add_row (year = "2021", race = "", sex = "male", age = "minor", cat = "cat", value = as.numeric(gsub(",","",target[3,12]))) %>%
+  add_row (year = "2021", race = "", sex = "male", age = "adult", cat = "cat", value = as.numeric(gsub(",","",target[4,12]))) %>%
+  add_row (year = "2021", race = "", sex = "male", age = "minor", cat = "other", value = as.numeric(gsub(",","",target[3,13]))) %>%
+  add_row (year = "2021", race = "", sex = "male", age = "adult", cat = "other", value = as.numeric(gsub(",","",target[4,13]))) %>%
+  add_row (year = "2021", race = "", sex = "unknown", age = "minor", cat = "juv", value = as.numeric(gsub(",","",target[3,14]))) %>%
+  add_row (year = "2021", race = "", sex = "unknown", age = "adult", cat = "juv", value = as.numeric(gsub(",","",target[4,14]))) %>%
+  add_row (year = "2021", race = "", sex = "unknown", age = "minor", cat = "end", value = as.numeric(gsub(",","",target[3,15]))) %>%
+  add_row (year = "2021", race = "", sex = "unknown", age = "adult", cat = "end", value = as.numeric(gsub(",","",target[4,15]))) %>%
+  add_row (year = "2021", race = "", sex = "unknown", age = "minor", cat = "inv", value = as.numeric(gsub(",","",target[3,16]))) %>%
+  add_row (year = "2021", race = "", sex = "unknown", age = "adult", cat = "inv", value = as.numeric(gsub(",","",target[4,16]))) %>%
+  add_row (year = "2021", race = "", sex = "unknown", age = "minor", cat = "dis", value = as.numeric(gsub(",","",target[3,17]))) %>%
+  add_row (year = "2021", race = "", sex = "unknown", age = "adult", cat = "dis", value = as.numeric(gsub(",","",target[4,17]))) %>%
+  add_row (year = "2021", race = "", sex = "unknown", age = "minor", cat = "cat", value = as.numeric(gsub(",","",target[3,18]))) %>%
+  add_row (year = "2021", race = "", sex = "unknown", age = "adult", cat = "cat", value = as.numeric(gsub(",","",target[4,18]))) %>%
+  add_row (year = "2021", race = "", sex = "unknown", age = "minor", cat = "other", value = as.numeric(gsub(",","",target[3,19]))) %>%
+  add_row (year = "2021", race = "", sex = "unknown", age = "adult", cat = "other", value = as.numeric(gsub(",","",target[4,19]))) 
+
+target <- data.frame(missing_persons_stats_2021[11]) %>% 
+  separate(col = 7, into = c("one", "two", "three", "four", "five", "six"), sep=" ")
+
+intersectional_missing_persons <- intersectional_missing_persons %>% 
+  add_row (year = "2021", race = "", sex = "female", age = "no_dob", cat = "juv", value = as.numeric(gsub(",","",target[2,2]))) %>%
+  add_row (year = "2021", race = "", sex = "female", age = "no_dob", cat = "end", value = as.numeric(gsub(",","",target[2,3]))) %>%
+  add_row (year = "2021", race = "", sex = "female", age = "no_dob", cat = "inv", value = as.numeric(gsub(",","",target[2,4]))) %>%
+  add_row (year = "2021", race = "", sex = "female", age = "no_dob", cat = "dis", value = as.numeric(gsub(",","",target[2,5]))) %>%
+  add_row (year = "2021", race = "", sex = "female", age = "no_dob", cat = "cat", value = as.numeric(gsub(",","",target[2,6]))) %>%
+  add_row (year = "2021", race = "", sex = "female", age = "no_dob", cat = "other", value = as.numeric(gsub(",","",target[2,7]))) %>%
+  add_row (year = "2021", race = "", sex = "male", age = "no_dob", cat = "juv", value = as.numeric(gsub(",","",target[2,8]))) %>%
+  add_row (year = "2021", race = "", sex = "male", age = "no_dob", cat = "end", value = as.numeric(gsub(",","",target[2,9]))) %>%
+  add_row (year = "2021", race = "", sex = "male", age = "no_dob", cat = "inv", value = as.numeric(gsub(",","",target[2,10]))) %>%
+  add_row (year = "2021", race = "", sex = "male", age = "no_dob", cat = "dis", value = as.numeric(gsub(",","",target[2,11]))) %>%
+  add_row (year = "2021", race = "", sex = "male", age = "no_dob", cat = "cat", value = as.numeric(gsub(",","",target[2,12]))) %>%
+  add_row (year = "2021", race = "", sex = "male", age = "no_dob", cat = "other", value = as.numeric(gsub(",","",target[2,13]))) %>%
+  add_row (year = "2021", race = "", sex = "unknown", age = "no_dob", cat = "juv", value = as.numeric(gsub(",","",target[2,14]))) %>%
+  add_row (year = "2021", race = "", sex = "unknown", age = "no_dob", cat = "end", value = as.numeric(gsub(",","",target[2,15]))) %>%
+  add_row (year = "2021", race = "", sex = "unknown", age = "no_dob", cat = "inv", value = as.numeric(gsub(",","",target[2,16]))) %>%
+  add_row (year = "2021", race = "", sex = "unknown", age = "no_dob", cat = "dis", value = as.numeric(gsub(",","",target[2,17]))) %>%
+  add_row (year = "2021", race = "", sex = "unknown", age = "no_dob", cat = "cat", value = as.numeric(gsub(",","",target[2,18]))) %>%
+  add_row (year = "2021", race = "", sex = "unknown", age = "no_dob", cat = "other", value = as.numeric(gsub(",","",target[2,19])))
+
+
+target <- data.frame(missing_persons_stats_2021[15]) %>%
+   separate(col = 3, into = c("one", "two"), sep=" ") %>% 
+   separate(col = 9, into = c("three", "four"), sep=" ")
+
+intersectional_missing_persons <- intersectional_missing_persons %>% 
+  add_row (year = "2021", race = "asian", sex = "female", age = "", cat = "juv", value = as.numeric(gsub(",","",target[2,2]))) %>%
+  add_row (year = "2021", race = "asian", sex = "male", age = "", cat = "juv", value = as.numeric(gsub(",","",target[3,2]))) %>%
+  add_row (year = "2021", race = "asian", sex = "unknown", age = "", cat = "juv", value = as.numeric(gsub(",","",target[4,2]))) %>%
+  add_row (year = "2021", race = "black", sex = "female", age = "", cat = "juv", value = as.numeric(gsub(",","",target[2,3]))) %>%
+  add_row (year = "2021", race = "black", sex = "male", age = "", cat = "juv", value = as.numeric(gsub(",","",target[3,3]))) %>%
+  add_row (year = "2021", race = "black", sex = "unknown", age = "", cat = "juv", value = as.numeric(gsub(",","",target[4,3]))) %>%
+  add_row (year = "2021", race = "indian", sex = "female", age = "", cat = "juv", value = as.numeric(gsub(",","",target[2,4]))) %>%
+  add_row (year = "2021", race = "indian", sex = "male", age = "", cat = "juv", value = as.numeric(gsub(",","",target[3,4]))) %>%
+  add_row (year = "2021", race = "indian", sex = "unknown", age = "", cat = "juv", value = as.numeric(gsub(",","",target[4,4]))) %>%
+  add_row (year = "2021", race = "unknown", sex = "female", age = "", cat = "juv", value = as.numeric(gsub(",","",target[2,5]))) %>%
+  add_row (year = "2021", race = "unknown", sex = "male", age = "", cat = "juv", value = as.numeric(gsub(",","",target[3,5]))) %>%
+  add_row (year = "2021", race = "unknown", sex = "unknown", age = "", cat = "juv", value = as.numeric(gsub(",","",target[4,5]))) %>%
+  add_row (year = "2021", race = "white", sex = "female", age = "", cat = "juv", value = as.numeric(gsub(",","",target[2,6]))) %>%
+  add_row (year = "2021", race = "white", sex = "male", age = "", cat = "juv", value = as.numeric(gsub(",","",target[3,6]))) %>%
+  add_row (year = "2021", race = "white", sex = "unknown", age = "", cat = "juv", value = as.numeric(gsub(",","",target[4,6]))) %>%
+  add_row (year = "2021", race = "asian", sex = "female", age = "", cat = "end", value = as.numeric(gsub(",","",target[2,8]))) %>%
+  add_row (year = "2021", race = "asian", sex = "male", age = "", cat = "end", value = as.numeric(gsub(",","",target[3,8]))) %>%
+  add_row (year = "2021", race = "asian", sex = "unknown", age = "", cat = "end", value = as.numeric(gsub(",","",target[4,8]))) %>%
+  add_row (year = "2021", race = "black", sex = "female", age = "", cat = "end", value = as.numeric(gsub(",","",target[2,9]))) %>%
+  add_row (year = "2021", race = "black", sex = "male", age = "", cat = "end", value = as.numeric(gsub(",","",target[3,9]))) %>%
+  add_row (year = "2021", race = "black", sex = "unknown", age = "", cat = "end", value = as.numeric(gsub(",","",target[4,9]))) %>%
+  add_row (year = "2021", race = "indian", sex = "female", age = "", cat = "end", value = as.numeric(gsub(",","",target[2,10]))) %>%
+  add_row (year = "2021", race = "indian", sex = "male", age = "", cat = "end", value = as.numeric(gsub(",","",target[3,10]))) %>%
+  add_row (year = "2021", race = "indian", sex = "unknown", age = "", cat = "end", value = as.numeric(gsub(",","",target[4,10]))) %>%
+  add_row (year = "2021", race = "unknown", sex = "female", age = "", cat = "end", value = as.numeric(gsub(",","",target[2,11]))) %>%
+  add_row (year = "2021", race = "unknown", sex = "male", age = "", cat = "end", value = as.numeric(gsub(",","",target[3,11]))) %>%
+  add_row (year = "2021", race = "unknown", sex = "unknown", age = "", cat = "end", value = as.numeric(gsub(",","",target[4,11]))) %>%
+  add_row (year = "2021", race = "white", sex = "female", age = "", cat = "end", value = as.numeric(gsub(",","",target[2,12]))) %>%
+  add_row (year = "2021", race = "white", sex = "male", age = "", cat = "end", value = as.numeric(gsub(",","",target[3,12]))) %>%
+  add_row (year = "2021", race = "white", sex = "unknown", age = "", cat = "end", value = as.numeric(gsub(",","",target[4,12])))
+
+target <- data.frame(missing_persons_stats_2021[16]) %>%
+   separate(col = 3, into = c("one", "two"), sep=" ") %>% 
+   separate(col = 9, into = c("three", "four"), sep=" ")
+
+intersectional_missing_persons <- intersectional_missing_persons %>% 
+  add_row (year = "2021", race = "asian", sex = "female", age = "", cat = "inv", value = as.numeric(gsub(",","",target[2,2]))) %>%
+  add_row (year = "2021", race = "asian", sex = "male", age = "", cat = "inv", value = as.numeric(gsub(",","",target[3,2]))) %>%
+  add_row (year = "2021", race = "asian", sex = "unknown", age = "", cat = "inv", value = as.numeric(gsub(",","",target[4,2]))) %>%
+  add_row (year = "2021", race = "black", sex = "female", age = "", cat = "inv", value = as.numeric(gsub(",","",target[2,3]))) %>%
+  add_row (year = "2021", race = "black", sex = "male", age = "", cat = "inv", value = as.numeric(gsub(",","",target[3,3]))) %>%
+  add_row (year = "2021", race = "black", sex = "unknown", age = "", cat = "inv", value = as.numeric(gsub(",","",target[4,3]))) %>%
+  add_row (year = "2021", race = "indian", sex = "female", age = "", cat = "inv", value = as.numeric(gsub(",","",target[2,4]))) %>%
+  add_row (year = "2021", race = "indian", sex = "male", age = "", cat = "inv", value = as.numeric(gsub(",","",target[3,4]))) %>%
+  add_row (year = "2021", race = "indian", sex = "unknown", age = "", cat = "inv", value = as.numeric(gsub(",","",target[4,4]))) %>%
+  add_row (year = "2021", race = "unknown", sex = "female", age = "", cat = "inv", value = as.numeric(gsub(",","",target[2,5]))) %>%
+  add_row (year = "2021", race = "unknown", sex = "male", age = "", cat = "inv", value = as.numeric(gsub(",","",target[3,5]))) %>%
+  add_row (year = "2021", race = "unknown", sex = "unknown", age = "", cat = "inv", value = as.numeric(gsub(",","",target[4,5]))) %>%
+  add_row (year = "2021", race = "white", sex = "female", age = "", cat = "inv", value = as.numeric(gsub(",","",target[2,6]))) %>%
+  add_row (year = "2021", race = "white", sex = "male", age = "", cat = "inv", value = as.numeric(gsub(",","",target[3,6]))) %>%
+  add_row (year = "2021", race = "white", sex = "unknown", age = "", cat = "inv", value = as.numeric(gsub(",","",target[4,6]))) %>%
+  add_row (year = "2021", race = "asian", sex = "female", age = "", cat = "dis", value = as.numeric(gsub(",","",target[2,8]))) %>%
+  add_row (year = "2021", race = "asian", sex = "male", age = "", cat = "dis", value = as.numeric(gsub(",","",target[3,8]))) %>%
+  add_row (year = "2021", race = "asian", sex = "unknown", age = "", cat = "dis", value = as.numeric(gsub(",","",target[4,8]))) %>%
+  add_row (year = "2021", race = "black", sex = "female", age = "", cat = "dis", value = as.numeric(gsub(",","",target[2,9]))) %>%
+  add_row (year = "2021", race = "black", sex = "male", age = "", cat = "dis", value = as.numeric(gsub(",","",target[3,9]))) %>%
+  add_row (year = "2021", race = "black", sex = "unknown", age = "", cat = "dis", value = as.numeric(gsub(",","",target[4,9]))) %>%
+  add_row (year = "2021", race = "indian", sex = "female", age = "", cat = "dis", value = as.numeric(gsub(",","",target[2,10]))) %>%
+  add_row (year = "2021", race = "indian", sex = "male", age = "", cat = "dis", value = as.numeric(gsub(",","",target[3,10]))) %>%
+  add_row (year = "2021", race = "indian", sex = "unknown", age = "", cat = "dis", value = as.numeric(gsub(",","",target[4,10]))) %>%
+  add_row (year = "2021", race = "unknown", sex = "female", age = "", cat = "dis", value = as.numeric(gsub(",","",target[2,11]))) %>%
+  add_row (year = "2021", race = "unknown", sex = "male", age = "", cat = "dis", value = as.numeric(gsub(",","",target[3,11]))) %>%
+  add_row (year = "2021", race = "unknown", sex = "unknown", age = "", cat = "dis", value = as.numeric(gsub(",","",target[4,11]))) %>%
+  add_row (year = "2021", race = "white", sex = "female", age = "", cat = "dis", value = as.numeric(gsub(",","",target[2,12]))) %>%
+  add_row (year = "2021", race = "white", sex = "male", age = "", cat = "dis", value = as.numeric(gsub(",","",target[3,12]))) %>%
+  add_row (year = "2021", race = "white", sex = "unknown", age = "", cat = "dis", value = as.numeric(gsub(",","",target[4,12])))
+
+target <- data.frame(missing_persons_stats_2021[17]) %>%
+   separate(col = 2, into = c("one", "two", "three", "four"), sep=" ") %>%
+   separate(col = 9, into = c("five", "six"), sep=" ")
+ 
+intersectional_missing_persons <- intersectional_missing_persons %>% 
+  add_row (year = "2021", race = "asian", sex = "female", age = "", cat = "cat", value = as.numeric(gsub(",","",target[2,2]))) %>%
+  add_row (year = "2021", race = "asian", sex = "male", age = "", cat = "cat", value = as.numeric(gsub(",","",target[3,2]))) %>%
+  add_row (year = "2021", race = "asian", sex = "unknown", age = "", cat = "cat", value = as.numeric(gsub(",","",target[4,2]))) %>%
+  add_row (year = "2021", race = "black", sex = "female", age = "", cat = "cat", value = as.numeric(gsub(",","",target[2,3]))) %>%
+  add_row (year = "2021", race = "black", sex = "male", age = "", cat = "cat", value = as.numeric(gsub(",","",target[3,3]))) %>%
+  add_row (year = "2021", race = "black", sex = "unknown", age = "", cat = "cat", value = as.numeric(gsub(",","",target[4,3]))) %>%
+  add_row (year = "2021", race = "indian", sex = "female", age = "", cat = "cat", value = as.numeric(gsub(",","",target[2,4]))) %>%
+  add_row (year = "2021", race = "indian", sex = "male", age = "", cat = "cat", value = as.numeric(gsub(",","",target[3,4]))) %>%
+  add_row (year = "2021", race = "indian", sex = "unknown", age = "", cat = "cat", value = as.numeric(gsub(",","",target[4,4]))) %>%
+  add_row (year = "2021", race = "unknown", sex = "female", age = "", cat = "cat", value = as.numeric(gsub(",","",target[2,5]))) %>%
+  add_row (year = "2021", race = "unknown", sex = "male", age = "", cat = "cat", value = as.numeric(gsub(",","",target[3,5]))) %>%
+  add_row (year = "2021", race = "unknown", sex = "unknown", age = "", cat = "cat", value = as.numeric(gsub(",","",target[4,5]))) %>%
+  add_row (year = "2021", race = "white", sex = "female", age = "", cat = "cat", value = as.numeric(gsub(",","",target[2,6]))) %>%
+  add_row (year = "2021", race = "white", sex = "male", age = "", cat = "cat", value = as.numeric(gsub(",","",target[3,6]))) %>%
+  add_row (year = "2021", race = "white", sex = "unknown", age = "", cat = "cat", value = as.numeric(gsub(",","",target[4,6]))) %>%
+  add_row (year = "2021", race = "asian", sex = "female", age = "", cat = "other", value = as.numeric(gsub(",","",target[2,8]))) %>%
+  add_row (year = "2021", race = "asian", sex = "male", age = "", cat = "other", value = as.numeric(gsub(",","",target[3,8]))) %>%
+  add_row (year = "2021", race = "asian", sex = "unknown", age = "", cat = "other", value = as.numeric(gsub(",","",target[4,8]))) %>%
+  add_row (year = "2021", race = "black", sex = "female", age = "", cat = "other", value = as.numeric(gsub(",","",target[2,9]))) %>%
+  add_row (year = "2021", race = "black", sex = "male", age = "", cat = "other", value = as.numeric(gsub(",","",target[3,9]))) %>%
+  add_row (year = "2021", race = "black", sex = "unknown", age = "", cat = "other", value = as.numeric(gsub(",","",target[4,9]))) %>%
+  add_row (year = "2021", race = "indian", sex = "female", age = "", cat = "other", value = as.numeric(gsub(",","",target[2,10]))) %>%
+  add_row (year = "2021", race = "indian", sex = "male", age = "", cat = "other", value = as.numeric(gsub(",","",target[3,10]))) %>%
+  add_row (year = "2021", race = "indian", sex = "unknown", age = "", cat = "other", value = as.numeric(gsub(",","",target[4,10]))) %>%
+  add_row (year = "2021", race = "unknown", sex = "female", age = "", cat = "other", value = as.numeric(gsub(",","",target[2,11]))) %>%
+  add_row (year = "2021", race = "unknown", sex = "male", age = "", cat = "other", value = as.numeric(gsub(",","",target[3,11]))) %>%
+  add_row (year = "2021", race = "unknown", sex = "unknown", age = "", cat = "other", value = as.numeric(gsub(",","",target[4,11]))) %>%
+  add_row (year = "2021", race = "white", sex = "female", age = "", cat = "other", value = as.numeric(gsub(",","",target[2,12]))) %>%
+  add_row (year = "2021", race = "white", sex = "male", age = "", cat = "other", value = as.numeric(gsub(",","",target[3,12]))) %>%
+  add_row (year = "2021", race = "white", sex = "unknown", age = "", cat = "other", value = as.numeric(gsub(",","",target[4,12])))
+
+target <- data.frame(missing_persons_stats_2020[3]) %>% 
+  separate(col = 6, into = c("one", "two", "three", "four", "five", "six"), sep=" ")
+
+intersectional_missing_persons <- intersectional_missing_persons %>% 
+  add_row (year = "2020", race = "asian", sex = "female", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,2]))) %>%
+  add_row (year = "2020", race = "asian", sex = "female", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,2]))) %>%
+  add_row (year = "2020", race = "black", sex = "female", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,3]))) %>%
+  add_row (year = "2020", race = "black", sex = "female", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,3]))) %>%
+  add_row (year = "2020", race = "indian", sex = "female", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,4]))) %>%
+  add_row (year = "2020", race = "indian", sex = "female", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,4]))) %>%
+  add_row (year = "2020", race = "unknown", sex = "female", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,5]))) %>%
+  add_row (year = "2020", race = "unknown", sex = "female", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,5]))) %>%
+  add_row (year = "2020", race = "white", sex = "female", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,6]))) %>%
+  add_row (year = "2020", race = "white", sex = "female", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,6]))) %>%
+  add_row (year = "2020", race = "asian", sex = "male", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,7]))) %>%
+  add_row (year = "2020", race = "asian", sex = "male", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,7]))) %>%
+  add_row (year = "2020", race = "black", sex = "male", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,8]))) %>%
+  add_row (year = "2020", race = "black", sex = "male", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,8]))) %>%
+  add_row (year = "2020", race = "indian", sex = "male", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,9]))) %>%
+  add_row (year = "2020", race = "indian", sex = "male", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,9]))) %>%
+  add_row (year = "2020", race = "unknown", sex = "male", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,10]))) %>%
+  add_row (year = "2020", race = "unknown", sex = "male", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,10]))) %>%
+  add_row (year = "2020", race = "white", sex = "male", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,11]))) %>%
+  add_row (year = "2020", race = "white", sex = "male", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,11]))) %>%
+  add_row (year = "2020", race = "asian", sex = "unknown", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,12]))) %>%
+  add_row (year = "2020", race = "asian", sex = "unknown", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,12]))) %>%
+  add_row (year = "2020", race = "black", sex = "unknown", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,13]))) %>%
+  add_row (year = "2020", race = "black", sex = "unknown", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,13]))) %>%
+  add_row (year = "2020", race = "indian", sex = "unknown", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,14]))) %>%
+  add_row (year = "2020", race = "indian", sex = "unknown", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,14]))) %>%
+  add_row (year = "2020", race = "unknown", sex = "unknown", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,15]))) %>%
+  add_row (year = "2020", race = "unknown", sex = "unknown", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,15]))) %>%
+  add_row (year = "2020", race = "white", sex = "unknown", age = "minor", cat = "", value = as.numeric(gsub(",","",target[3,16]))) %>%
+  add_row (year = "2020", race = "white", sex = "unknown", age = "adult", cat = "", value = as.numeric(gsub(",","",target[4,16])))
+
+target <- data.frame(missing_persons_stats_2020[5]) %>% 
+  separate(col = 6, into = c("one", "two", "three", "four", "five"), sep=" ")
+
+intersectional_missing_persons <- intersectional_missing_persons %>% 
+  add_row (year = "2020", race = "asian", sex = "female", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[4,2]))) %>%
+  add_row (year = "2020", race = "black", sex = "female", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[4,3]))) %>%
+  add_row (year = "2020", race = "indian", sex = "female", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[4,4]))) %>%
+  add_row (year = "2020", race = "unknown", sex = "female", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[4,5]))) %>%
+  add_row (year = "2020", race = "white", sex = "female", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[4,6]))) %>%
+  add_row (year = "2020", race = "asian", sex = "male", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[4,7]))) %>%
+  add_row (year = "2020", race = "black", sex = "male", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[4,8]))) %>%
+  add_row (year = "2020", race = "indian", sex = "male", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[4,9]))) %>%
+  add_row (year = "2020", race = "unknown", sex = "male", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[4,10]))) %>%
+  add_row (year = "2020", race = "white", sex = "male", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[4,11]))) %>%
+  add_row (year = "2020", race = "asian", sex = "unknown", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[4,12]))) %>%
+  add_row (year = "2020", race = "black", sex = "unknown", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[4,13]))) %>%
+  add_row (year = "2020", race = "indian", sex = "unknown", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[4,14]))) %>%
+  add_row (year = "2020", race = "unknown", sex = "unknown", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[4,15]))) %>%
+  add_row (year = "2020", race = "white", sex = "unknown", age = "no_dob", cat = "", value = as.numeric(gsub(",","",target[4,16])))
+
+
+target <- data.frame(missing_persons_stats_2020[8]) %>%
+   separate(col = 4, into = c("one", "two"), sep=" ") %>%
+   separate(col = 6, into = c("one", "two", "three", "four", "five", "six", "seven"), sep=" ") %>%
+   separate(col = 14, into = c("one", "two"), sep=" ")
+
+intersectional_missing_persons <- intersectional_missing_persons %>% 
+  add_row (year = "2020", race = "", sex = "female", age = "minor", cat = "juv", value = as.numeric(gsub(",","",target[3,2]))) %>%
+  add_row (year = "2020", race = "", sex = "female", age = "adult", cat = "juv", value = as.numeric(gsub(",","",target[4,2]))) %>%
+  add_row (year = "2020", race = "", sex = "female", age = "minor", cat = "end", value = as.numeric(gsub(",","",target[3,3]))) %>%
+  add_row (year = "2020", race = "", sex = "female", age = "adult", cat = "end", value = as.numeric(gsub(",","",target[4,3]))) %>%
+  add_row (year = "2020", race = "", sex = "female", age = "minor", cat = "inv", value = as.numeric(gsub(",","",target[3,4]))) %>%
+  add_row (year = "2020", race = "", sex = "female", age = "adult", cat = "inv", value = as.numeric(gsub(",","",target[4,4]))) %>%
+  add_row (year = "2020", race = "", sex = "female", age = "minor", cat = "dis", value = as.numeric(gsub(",","",target[3,5]))) %>%
+  add_row (year = "2020", race = "", sex = "female", age = "adult", cat = "dis", value = as.numeric(gsub(",","",target[4,5]))) %>%
+  add_row (year = "2020", race = "", sex = "female", age = "minor", cat = "cat", value = as.numeric(gsub(",","",target[3,6]))) %>%
+  add_row (year = "2020", race = "", sex = "female", age = "adult", cat = "cat", value = as.numeric(gsub(",","",target[4,6]))) %>%
+  add_row (year = "2020", race = "", sex = "female", age = "minor", cat = "other", value = as.numeric(gsub(",","",target[3,7]))) %>%
+  add_row (year = "2020", race = "", sex = "female", age = "adult", cat = "other", value = as.numeric(gsub(",","",target[4,7]))) %>%
+  add_row (year = "2020", race = "", sex = "male", age = "minor", cat = "juv", value = as.numeric(gsub(",","",target[3,8]))) %>%
+  add_row (year = "2020", race = "", sex = "male", age = "adult", cat = "juv", value = as.numeric(gsub(",","",target[4,8]))) %>%
+  add_row (year = "2020", race = "", sex = "male", age = "minor", cat = "end", value = as.numeric(gsub(",","",target[3,9]))) %>%
+  add_row (year = "2020", race = "", sex = "male", age = "adult", cat = "end", value = as.numeric(gsub(",","",target[4,9]))) %>%
+  add_row (year = "2020", race = "", sex = "male", age = "minor", cat = "inv", value = as.numeric(gsub(",","",target[3,10]))) %>%
+  add_row (year = "2020", race = "", sex = "male", age = "adult", cat = "inv", value = as.numeric(gsub(",","",target[4,10]))) %>%
+  add_row (year = "2020", race = "", sex = "male", age = "minor", cat = "dis", value = as.numeric(gsub(",","",target[3,11]))) %>%
+  add_row (year = "2020", race = "", sex = "male", age = "adult", cat = "dis", value = as.numeric(gsub(",","",target[4,11]))) %>%
+  add_row (year = "2020", race = "", sex = "male", age = "minor", cat = "cat", value = as.numeric(gsub(",","",target[3,12]))) %>%
+  add_row (year = "2020", race = "", sex = "male", age = "adult", cat = "cat", value = as.numeric(gsub(",","",target[4,12]))) %>%
+  add_row (year = "2020", race = "", sex = "male", age = "minor", cat = "other", value = as.numeric(gsub(",","",target[3,13]))) %>%
+  add_row (year = "2020", race = "", sex = "male", age = "adult", cat = "other", value = as.numeric(gsub(",","",target[4,13]))) %>%
+  add_row (year = "2020", race = "", sex = "unknown", age = "minor", cat = "juv", value = as.numeric(gsub(",","",target[3,14]))) %>%
+  add_row (year = "2020", race = "", sex = "unknown", age = "adult", cat = "juv", value = as.numeric(gsub(",","",target[4,14]))) %>%
+  add_row (year = "2020", race = "", sex = "unknown", age = "minor", cat = "end", value = as.numeric(gsub(",","",target[3,15]))) %>%
+  add_row (year = "2020", race = "", sex = "unknown", age = "adult", cat = "end", value = as.numeric(gsub(",","",target[4,15]))) %>%
+  add_row (year = "2020", race = "", sex = "unknown", age = "minor", cat = "inv", value = as.numeric(gsub(",","",target[3,16]))) %>%
+  add_row (year = "2020", race = "", sex = "unknown", age = "adult", cat = "inv", value = as.numeric(gsub(",","",target[4,16]))) %>%
+  add_row (year = "2020", race = "", sex = "unknown", age = "minor", cat = "dis", value = as.numeric(gsub(",","",target[3,17]))) %>%
+  add_row (year = "2020", race = "", sex = "unknown", age = "adult", cat = "dis", value = as.numeric(gsub(",","",target[4,17]))) %>%
+  add_row (year = "2020", race = "", sex = "unknown", age = "minor", cat = "cat", value = as.numeric(gsub(",","",target[3,18]))) %>%
+  add_row (year = "2020", race = "", sex = "unknown", age = "adult", cat = "cat", value = as.numeric(gsub(",","",target[4,18]))) %>%
+  add_row (year = "2020", race = "", sex = "unknown", age = "minor", cat = "other", value = as.numeric(gsub(",","",target[3,19]))) %>%
+  add_row (year = "2020", race = "", sex = "unknown", age = "adult", cat = "other", value = as.numeric(gsub(",","",target[4,19]))) 
+
+target <- data.frame(missing_persons_stats_2020[10]) %>% 
+  separate(col = 7, into = c("one", "two", "three", "four", "five", "six"), sep=" ")
+
+intersectional_missing_persons <- intersectional_missing_persons %>% 
+  add_row (year = "2020", race = "", sex = "female", age = "no_dob", cat = "juv", value = as.numeric(gsub(",","",target[2,2]))) %>%
+  add_row (year = "2020", race = "", sex = "female", age = "no_dob", cat = "end", value = as.numeric(gsub(",","",target[2,3]))) %>%
+  add_row (year = "2020", race = "", sex = "female", age = "no_dob", cat = "inv", value = as.numeric(gsub(",","",target[2,4]))) %>%
+  add_row (year = "2020", race = "", sex = "female", age = "no_dob", cat = "dis", value = as.numeric(gsub(",","",target[2,5]))) %>%
+  add_row (year = "2020", race = "", sex = "female", age = "no_dob", cat = "cat", value = as.numeric(gsub(",","",target[2,6]))) %>%
+  add_row (year = "2020", race = "", sex = "female", age = "no_dob", cat = "other", value = as.numeric(gsub(",","",target[2,7]))) %>%
+  add_row (year = "2020", race = "", sex = "male", age = "no_dob", cat = "juv", value = as.numeric(gsub(",","",target[2,8]))) %>%
+  add_row (year = "2020", race = "", sex = "male", age = "no_dob", cat = "end", value = as.numeric(gsub(",","",target[2,9]))) %>%
+  add_row (year = "2020", race = "", sex = "male", age = "no_dob", cat = "inv", value = as.numeric(gsub(",","",target[2,10]))) %>%
+  add_row (year = "2020", race = "", sex = "male", age = "no_dob", cat = "dis", value = as.numeric(gsub(",","",target[2,11]))) %>%
+  add_row (year = "2020", race = "", sex = "male", age = "no_dob", cat = "cat", value = as.numeric(gsub(",","",target[2,12]))) %>%
+  add_row (year = "2020", race = "", sex = "male", age = "no_dob", cat = "other", value = as.numeric(gsub(",","",target[2,13]))) %>%
+  add_row (year = "2020", race = "", sex = "unknown", age = "no_dob", cat = "juv", value = as.numeric(gsub(",","",target[2,14]))) %>%
+  add_row (year = "2020", race = "", sex = "unknown", age = "no_dob", cat = "end", value = as.numeric(gsub(",","",target[2,15]))) %>%
+  add_row (year = "2020", race = "", sex = "unknown", age = "no_dob", cat = "inv", value = as.numeric(gsub(",","",target[2,16]))) %>%
+  add_row (year = "2020", race = "", sex = "unknown", age = "no_dob", cat = "dis", value = as.numeric(gsub(",","",target[2,17]))) %>%
+  add_row (year = "2020", race = "", sex = "unknown", age = "no_dob", cat = "cat", value = as.numeric(gsub(",","",target[2,18]))) %>%
+  add_row (year = "2020", race = "", sex = "unknown", age = "no_dob", cat = "other", value = as.numeric(gsub(",","",target[2,19])))
+
+target <- data.frame(missing_persons_stats_2020[13]) %>%
+   separate(col = 3, into = c("one", "two"), sep=" ") %>% 
+   separate(col = 9, into = c("three", "four"), sep=" ")
+
+intersectional_missing_persons <- intersectional_missing_persons %>% 
+  add_row (year = "2020", race = "asian", sex = "female", age = "", cat = "juv", value = as.numeric(gsub(",","",target[2,2]))) %>%
+  add_row (year = "2020", race = "asian", sex = "male", age = "", cat = "juv", value = as.numeric(gsub(",","",target[3,2]))) %>%
+  add_row (year = "2020", race = "asian", sex = "unknown", age = "", cat = "juv", value = as.numeric(gsub(",","",target[4,2]))) %>%
+  add_row (year = "2020", race = "black", sex = "female", age = "", cat = "juv", value = as.numeric(gsub(",","",target[2,3]))) %>%
+  add_row (year = "2020", race = "black", sex = "male", age = "", cat = "juv", value = as.numeric(gsub(",","",target[3,3]))) %>%
+  add_row (year = "2020", race = "black", sex = "unknown", age = "", cat = "juv", value = as.numeric(gsub(",","",target[4,3]))) %>%
+  add_row (year = "2020", race = "indian", sex = "female", age = "", cat = "juv", value = as.numeric(gsub(",","",target[2,4]))) %>%
+  add_row (year = "2020", race = "indian", sex = "male", age = "", cat = "juv", value = as.numeric(gsub(",","",target[3,4]))) %>%
+  add_row (year = "2020", race = "indian", sex = "unknown", age = "", cat = "juv", value = as.numeric(gsub(",","",target[4,4]))) %>%
+  add_row (year = "2020", race = "unknown", sex = "female", age = "", cat = "juv", value = as.numeric(gsub(",","",target[2,5]))) %>%
+  add_row (year = "2020", race = "unknown", sex = "male", age = "", cat = "juv", value = as.numeric(gsub(",","",target[3,5]))) %>%
+  add_row (year = "2020", race = "unknown", sex = "unknown", age = "", cat = "juv", value = as.numeric(gsub(",","",target[4,5]))) %>%
+  add_row (year = "2020", race = "white", sex = "female", age = "", cat = "juv", value = as.numeric(gsub(",","",target[2,6]))) %>%
+  add_row (year = "2020", race = "white", sex = "male", age = "", cat = "juv", value = as.numeric(gsub(",","",target[3,6]))) %>%
+  add_row (year = "2020", race = "white", sex = "unknown", age = "", cat = "juv", value = as.numeric(gsub(",","",target[4,6]))) %>%
+  add_row (year = "2020", race = "asian", sex = "female", age = "", cat = "end", value = as.numeric(gsub(",","",target[2,8]))) %>%
+  add_row (year = "2020", race = "asian", sex = "male", age = "", cat = "end", value = as.numeric(gsub(",","",target[3,8]))) %>%
+  add_row (year = "2020", race = "asian", sex = "unknown", age = "", cat = "end", value = as.numeric(gsub(",","",target[4,8]))) %>%
+  add_row (year = "2020", race = "black", sex = "female", age = "", cat = "end", value = as.numeric(gsub(",","",target[2,9]))) %>%
+  add_row (year = "2020", race = "black", sex = "male", age = "", cat = "end", value = as.numeric(gsub(",","",target[3,9]))) %>%
+  add_row (year = "2020", race = "black", sex = "unknown", age = "", cat = "end", value = as.numeric(gsub(",","",target[4,9]))) %>%
+  add_row (year = "2020", race = "indian", sex = "female", age = "", cat = "end", value = as.numeric(gsub(",","",target[2,10]))) %>%
+  add_row (year = "2020", race = "indian", sex = "male", age = "", cat = "end", value = as.numeric(gsub(",","",target[3,10]))) %>%
+  add_row (year = "2020", race = "indian", sex = "unknown", age = "", cat = "end", value = as.numeric(gsub(",","",target[4,10]))) %>%
+  add_row (year = "2020", race = "unknown", sex = "female", age = "", cat = "end", value = as.numeric(gsub(",","",target[2,11]))) %>%
+  add_row (year = "2020", race = "unknown", sex = "male", age = "", cat = "end", value = as.numeric(gsub(",","",target[3,11]))) %>%
+  add_row (year = "2020", race = "unknown", sex = "unknown", age = "", cat = "end", value = as.numeric(gsub(",","",target[4,11]))) %>%
+  add_row (year = "2020", race = "white", sex = "female", age = "", cat = "end", value = as.numeric(gsub(",","",target[2,12]))) %>%
+  add_row (year = "2020", race = "white", sex = "male", age = "", cat = "end", value = as.numeric(gsub(",","",target[3,12]))) %>%
+  add_row (year = "2020", race = "white", sex = "unknown", age = "", cat = "end", value = as.numeric(gsub(",","",target[4,12])))
+
+target <- data.frame(missing_persons_stats_2020[14]) %>%
+   separate(col = 3, into = c("one", "two"), sep=" ") %>% 
+   separate(col = 9, into = c("three", "four"), sep=" ")
+
+intersectional_missing_persons <- intersectional_missing_persons %>% 
+  add_row (year = "2020", race = "asian", sex = "female", age = "", cat = "inv", value = as.numeric(gsub(",","",target[2,2]))) %>%
+  add_row (year = "2020", race = "asian", sex = "male", age = "", cat = "inv", value = as.numeric(gsub(",","",target[3,2]))) %>%
+  add_row (year = "2020", race = "asian", sex = "unknown", age = "", cat = "inv", value = as.numeric(gsub(",","",target[4,2]))) %>%
+  add_row (year = "2020", race = "black", sex = "female", age = "", cat = "inv", value = as.numeric(gsub(",","",target[2,3]))) %>%
+  add_row (year = "2020", race = "black", sex = "male", age = "", cat = "inv", value = as.numeric(gsub(",","",target[3,3]))) %>%
+  add_row (year = "2020", race = "black", sex = "unknown", age = "", cat = "inv", value = as.numeric(gsub(",","",target[4,3]))) %>%
+  add_row (year = "2020", race = "indian", sex = "female", age = "", cat = "inv", value = as.numeric(gsub(",","",target[2,4]))) %>%
+  add_row (year = "2020", race = "indian", sex = "male", age = "", cat = "inv", value = as.numeric(gsub(",","",target[3,4]))) %>%
+  add_row (year = "2020", race = "indian", sex = "unknown", age = "", cat = "inv", value = as.numeric(gsub(",","",target[4,4]))) %>%
+  add_row (year = "2020", race = "unknown", sex = "female", age = "", cat = "inv", value = as.numeric(gsub(",","",target[2,5]))) %>%
+  add_row (year = "2020", race = "unknown", sex = "male", age = "", cat = "inv", value = as.numeric(gsub(",","",target[3,5]))) %>%
+  add_row (year = "2020", race = "unknown", sex = "unknown", age = "", cat = "inv", value = as.numeric(gsub(",","",target[4,5]))) %>%
+  add_row (year = "2020", race = "white", sex = "female", age = "", cat = "inv", value = as.numeric(gsub(",","",target[2,6]))) %>%
+  add_row (year = "2020", race = "white", sex = "male", age = "", cat = "inv", value = as.numeric(gsub(",","",target[3,6]))) %>%
+  add_row (year = "2020", race = "white", sex = "unknown", age = "", cat = "inv", value = as.numeric(gsub(",","",target[4,6]))) %>%
+  add_row (year = "2020", race = "asian", sex = "female", age = "", cat = "dis", value = as.numeric(gsub(",","",target[2,8]))) %>%
+  add_row (year = "2020", race = "asian", sex = "male", age = "", cat = "dis", value = as.numeric(gsub(",","",target[3,8]))) %>%
+  add_row (year = "2020", race = "asian", sex = "unknown", age = "", cat = "dis", value = as.numeric(gsub(",","",target[4,8]))) %>%
+  add_row (year = "2020", race = "black", sex = "female", age = "", cat = "dis", value = as.numeric(gsub(",","",target[2,9]))) %>%
+  add_row (year = "2020", race = "black", sex = "male", age = "", cat = "dis", value = as.numeric(gsub(",","",target[3,9]))) %>%
+  add_row (year = "2020", race = "black", sex = "unknown", age = "", cat = "dis", value = as.numeric(gsub(",","",target[4,9]))) %>%
+  add_row (year = "2020", race = "indian", sex = "female", age = "", cat = "dis", value = as.numeric(gsub(",","",target[2,10]))) %>%
+  add_row (year = "2020", race = "indian", sex = "male", age = "", cat = "dis", value = as.numeric(gsub(",","",target[3,10]))) %>%
+  add_row (year = "2020", race = "indian", sex = "unknown", age = "", cat = "dis", value = as.numeric(gsub(",","",target[4,10]))) %>%
+  add_row (year = "2020", race = "unknown", sex = "female", age = "", cat = "dis", value = as.numeric(gsub(",","",target[2,11]))) %>%
+  add_row (year = "2020", race = "unknown", sex = "male", age = "", cat = "dis", value = as.numeric(gsub(",","",target[3,11]))) %>%
+  add_row (year = "2020", race = "unknown", sex = "unknown", age = "", cat = "dis", value = as.numeric(gsub(",","",target[4,11]))) %>%
+  add_row (year = "2020", race = "white", sex = "female", age = "", cat = "dis", value = as.numeric(gsub(",","",target[2,12]))) %>%
+  add_row (year = "2020", race = "white", sex = "male", age = "", cat = "dis", value = as.numeric(gsub(",","",target[3,12]))) %>%
+  add_row (year = "2020", race = "white", sex = "unknown", age = "", cat = "dis", value = as.numeric(gsub(",","",target[4,12])))
+
+target <- data.frame(missing_persons_stats_2020[15]) %>%
+   separate(col = 2, into = c("one", "two", "three", "four"), sep=" ") %>%
+   separate(col = 9, into = c("five", "six"), sep=" ")
+ 
+intersectional_missing_persons <- intersectional_missing_persons %>% 
+  add_row (year = "2020", race = "asian", sex = "female", age = "", cat = "cat", value = as.numeric(gsub(",","",target[2,2]))) %>%
+  add_row (year = "2020", race = "asian", sex = "male", age = "", cat = "cat", value = as.numeric(gsub(",","",target[3,2]))) %>%
+  add_row (year = "2020", race = "asian", sex = "unknown", age = "", cat = "cat", value = as.numeric(gsub(",","",target[4,2]))) %>%
+  add_row (year = "2020", race = "black", sex = "female", age = "", cat = "cat", value = as.numeric(gsub(",","",target[2,3]))) %>%
+  add_row (year = "2020", race = "black", sex = "male", age = "", cat = "cat", value = as.numeric(gsub(",","",target[3,3]))) %>%
+  add_row (year = "2020", race = "black", sex = "unknown", age = "", cat = "cat", value = as.numeric(gsub(",","",target[4,3]))) %>%
+  add_row (year = "2020", race = "indian", sex = "female", age = "", cat = "cat", value = as.numeric(gsub(",","",target[2,4]))) %>%
+  add_row (year = "2020", race = "indian", sex = "male", age = "", cat = "cat", value = as.numeric(gsub(",","",target[3,4]))) %>%
+  add_row (year = "2020", race = "indian", sex = "unknown", age = "", cat = "cat", value = as.numeric(gsub(",","",target[4,4]))) %>%
+  add_row (year = "2020", race = "unknown", sex = "female", age = "", cat = "cat", value = as.numeric(gsub(",","",target[2,5]))) %>%
+  add_row (year = "2020", race = "unknown", sex = "male", age = "", cat = "cat", value = as.numeric(gsub(",","",target[3,5]))) %>%
+  add_row (year = "2020", race = "unknown", sex = "unknown", age = "", cat = "cat", value = as.numeric(gsub(",","",target[4,5]))) %>%
+  add_row (year = "2020", race = "white", sex = "female", age = "", cat = "cat", value = as.numeric(gsub(",","",target[2,6]))) %>%
+  add_row (year = "2020", race = "white", sex = "male", age = "", cat = "cat", value = as.numeric(gsub(",","",target[3,6]))) %>%
+  add_row (year = "2020", race = "white", sex = "unknown", age = "", cat = "cat", value = as.numeric(gsub(",","",target[4,6]))) %>%
+  add_row (year = "2020", race = "asian", sex = "female", age = "", cat = "other", value = as.numeric(gsub(",","",target[2,8]))) %>%
+  add_row (year = "2020", race = "asian", sex = "male", age = "", cat = "other", value = as.numeric(gsub(",","",target[3,8]))) %>%
+  add_row (year = "2020", race = "asian", sex = "unknown", age = "", cat = "other", value = as.numeric(gsub(",","",target[4,8]))) %>%
+  add_row (year = "2020", race = "black", sex = "female", age = "", cat = "other", value = as.numeric(gsub(",","",target[2,9]))) %>%
+  add_row (year = "2020", race = "black", sex = "male", age = "", cat = "other", value = as.numeric(gsub(",","",target[3,9]))) %>%
+  add_row (year = "2020", race = "black", sex = "unknown", age = "", cat = "other", value = as.numeric(gsub(",","",target[4,9]))) %>%
+  add_row (year = "2020", race = "indian", sex = "female", age = "", cat = "other", value = as.numeric(gsub(",","",target[2,10]))) %>%
+  add_row (year = "2020", race = "indian", sex = "male", age = "", cat = "other", value = as.numeric(gsub(",","",target[3,10]))) %>%
+  add_row (year = "2020", race = "indian", sex = "unknown", age = "", cat = "other", value = as.numeric(gsub(",","",target[4,10]))) %>%
+  add_row (year = "2020", race = "unknown", sex = "female", age = "", cat = "other", value = as.numeric(gsub(",","",target[2,11]))) %>%
+  add_row (year = "2020", race = "unknown", sex = "male", age = "", cat = "other", value = as.numeric(gsub(",","",target[3,11]))) %>%
+  add_row (year = "2020", race = "unknown", sex = "unknown", age = "", cat = "other", value = as.numeric(gsub(",","",target[4,11]))) %>%
+  add_row (year = "2020", race = "white", sex = "female", age = "", cat = "other", value = as.numeric(gsub(",","",target[2,12]))) %>%
+  add_row (year = "2020", race = "white", sex = "male", age = "", cat = "other", value = as.numeric(gsub(",","",target[3,12]))) %>%
+  add_row (year = "2020", race = "white", sex = "unknown", age = "", cat = "other", value = as.numeric(gsub(",","",target[4,12])))
+
+intersectional_missing_persons[intersectional_missing_persons == ""] <- NA
+
+intersectional_missing_persons
+```
+
+Rather than re-scraping the 2007-19, I chose to transform the data to be able to join with the more detailed data. I chose not to include cases where sex, age or race was not entered. Though this may be representative of underrepresented identity (however, I think this is unlikely), due to lower number, they are not statistically significant.
+
+```{r}
+fbi_ncic <-
+  missing_persons_entry_by_sex_race_age %>%
+  pivot_longer(-c(1),names_to = "name", values_to = "value") %>%
+  mutate(name = str_replace_all(name, "unknown_", "unknown")) %>% 
+  separate(col=name, into=c("sex", "race", "age"), sep="_") %>%
+  mutate(age = case_when(
+    race == "minor" ~ "minor",
+    race == "adult" ~ "adult",
+    race == "unknownage" ~ "unknown",
+    TRUE ~ age
+  ),
+  race = case_when(
+    sex == "indian" ~ "indian",
+    sex == "black" ~ "black",
+    sex == "asian" ~ "asian",
+    sex == "white" ~ "white",
+    sex == "unknownrace" ~ "unknown",
+    TRUE ~ race
+  ),
+  sex = case_when(
+    sex == "female" ~ "female",
+    sex == "male" ~ "male",
+    sex == "unknownsex" ~ "unknown",
+    TRUE ~ NA_character_
+  ),
+  race = case_when(
+    race == "black" ~ "black",
+    race == "white" ~ "white",
+    race == "asian" ~ "asian",
+    race == "indian" ~ "indian",
+    race == "unknownrace" ~ "unknown",
+    TRUE ~ NA_character_
+  )) %>% 
+  filter(!is.na(value)) %>% 
+  filter(year != "2022", year != "2021", year != "2020") %>%
+  mutate(cat=NA) %>% 
+  rbind(intersectional_missing_persons) %>% 
+  arrange(desc(year)) %>% 
+  select(year, race, sex, age, cat, value)
+
+fbi_ncic
+```
+
+### B. National Missing and Unidentified Persons System (current)
+
+The National Missing and Unidentified Persons System is public database of missing persons and unlike the FBI reports, has no aggregation. However, cases are only entered into this database on a voluntary basis and thus is not a representative sample of missing persons in the U.S.
+
+Over email, spokesperson warned me, "Participation in NamUs is voluntary therefore trends in missing person data may not correlate with actual missing persons cases reported to law enforcement."
+
+The cases are vetted with local law enforcement for accuracy before entry.
+
+This database also only includes active missing cases. I did request for the purged records in hopes of learning about the potential disparities in length individual are missing, which have been reported in the missing persons literature. My request was successful. However, the records did not provide dates, without this important context, the request proved useless. These records are available here [link needed].
+
+Due to the nature of the records, I felt that it was important to present the most recent data.
+
+So, I used Github actions and a Python script to update these records daily. Most information is available on my Github repository.
+
+I used Playwright to accomplish this.
+
+Playwright opens a browser, logs into the NamUs database, which is required for download data and downloads the entire database.
+
+```{python python.reticulate = FALSE}
+from playwright.sync_api import Playwright, sync_playwright
+import os
+from decouple import config
+
+def scrape():
+    try:
+        namus_password = os.environ['NAMUS_PASSWORD']
+    except:
+        namus_password = config('NAMUS_PASSWORD')
+    
+    destination_folder_path = "./data/"
+    
+    # users are only allowed to download 10,000 records at a time
+    yearss = [{"start": "1875", "end": "2014"}, {"start": "2015", "end": "2020"},{"start": '2021', "end": "2023"}]
+    
+    with sync_playwright() as p:
+
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context()
+        page = context.new_page()
+        page.goto("https://www.namus.gov/dashboard")
+
+        page.click("#NavLogin")
+        page.fill("#loginUsername", "coleschnell@gmail.com")
+        page.fill("#loginPassword", namus_password)
+        page.click("#LoginSubmit")
+
+        page.wait_for_selector(".user-avatar")
+
+        page.click(".search-link")
+
+        for years in yearss:
+          
+            # Select the years
+            page.locator("xpath=/html/body/div[1]/div[4]/form/div[1]/section[2]/div/div[2]/div/div/section/div/div/article[1]/div/div[5]/div/div[3]/div/date-range-input/div/div[2]/div[1]/div[1]/date-input/div/years-input/select").select_option(years["start"])
+            page.locator("xpath=/html/body/div[1]/div[4]/form/div[1]/section[2]/div/div[2]/div/div/section/div/div/article[1]/div/div[5]/div/div[3]/div/date-range-input/div/div[2]/div[1]/div[2]/date-input/div/years-input/select").select_option(years["end"])
+            
+            page.click("input.button-save")
+
+            page.wait_for_selector("a.view-link")
+            page.screenshot(path="search_results.png")
+            page.locator("a.view-link").click()
+            
+            with page.expect_download() as download_info:
+                download = download_info.value
+            file_name = "results" + years["start"] + "_" + years["end"]+ ".csv"
+            download.save_as(os.path.join(destination_folder_path, file_name))
+
+            page.go_back()
+
+        browser.close()
+```
+
+I used another python script to combine and compare the data with the previous days' scrapes, logging any purged or added records.
+
+```{python  python.reticulate = FALSE}
+import pandas as pd
+import os
+from datetime import datetime
+from skimpy import clean_columns
+import pickle
+import pytz
+
+def combine():
+  
+    destination_folder_path = "./data/"
+    
+    yearss = [{"start": "1875", "end": "2014"}, {"start": "2015", "end": "2020"},{"start": '2021', "end": "2023"}]
+    
+    today = datetime.now((pytz.timezone('US/Central'))).strftime('%Y-%m-%d')
+
+    try:
+        with open(os.path.join(destination_folder_path, "scrape_record.pkl"), 'rb') as f:
+            scrape_record = pickle.load(f)
+    except:
+        scrape_record = {}
+
+    scrape_record[str(today)] = {}
+    new = pd.DataFrame()
+
+    try:
+        old = pd.read_csv(os.path.join(destination_folder_path, "combined.csv"))
+    except:
+        old = pd.DataFrame()
+    try:
+        purged = pd.read_csv(os.path.join(destination_folder_path, "purged.csv"))
+    except:
+        purged = pd.DataFrame()
+
+    for years in yearss:
+        file_name = "results" + years["start"] + "_" + years["end"]+ ".csv"
+        df = pd.read_csv(os.path.join(destination_folder_path, file_name))
+        new = pd.concat([new,df], ignore_index=True)
+
+    new = clean_columns(new)
+    combined = pd.concat([old,new], ignore_index=True)
+    combined.drop_duplicates(inplace=True)
+
+    # Perform anit-join
+    try:
+        outer = new.merge(old, how='outer', indicator=True)
+        new_entry = outer[(outer._merge=='left_only')].drop('_merge', axis=1)
+        new_entry = clean_columns(new_entry)
+        scrape_record[today]["new_entries"] = len(new_purged)
+    except:
+        print("No records entered")
+        scrape_record[today]["new_entries"] = 0
+    
+    try:
+        outer = old.merge(new, how='outer', indicator=True)
+        new_purged = outer[(outer._merge=='left_only')].drop('_merge', axis=1)
+        new_purged["purge_date"] = today
+        new_purged = clean_columns(new_purged)
+        scrape_record[today]["purged"] = len(new_purged)
+        purged = pd.concat([purged,new_purged], ignore_index=True)
+    except:
+        print("No records purged")
+        scrape_record[today]["purged"] = 0
+    
+    scrape_record[today]["total_records"] = len(combined)
+    scrape_record[today]["total_purged"] = len(purged)
+
+    with open(os.path.join(destination_folder_path, "scrape_record.pkl"), 'wb') as f:
+        pickle.dump(scrape_record, f)
+
+    combined.to_csv(os.path.join(destination_folder_path, "combined.csv"), index=False)
+    purged.to_csv(os.path.join(destination_folder_path, "purged.csv"), index=False)
+```
+
+```{r}
+# read in namus data
+namus_missing_persons <- read_csv("https://drive.google.com/uc?id=1REy4mu9tIWyA9ltQOAf7tkuZAPxAxIba")
+namus_missing_persons
+```
+
+## 2. Analysis {#analysis-1}
+
+### A. National Crime Information Center Missing Person and Unidentified Person Statistics (2007-2022)
+
+```{r}
+# install.packages("tidycensus", "jsonlite")
+
+library(tidycensus)
+library(jsonlite)
+```
+
+**WARNING: The data collected uses different methods of aggregation, THEREFORE IS NON-EXCLUSIVE AND REPRESENTS MULTIPLE DATA SETS. Using one dataframe is for convenience and not analysis.**
+
+**IMPORTANT data notes:**
+
+-   All Hispanic Americans are included as white
+
+-   Entry of age is voluntary - no_dob age is no date of birth
+
+```{r echo=TRUE}
+# create data set for three years with detail for race, sex and age
+fbi_ncic_race_sex_age_2020_22 <-
+  fbi_ncic %>% 
+  filter(!is.na(race), !is.na(sex), !is.na(age), is.na(cat))
+
+# fetch population estimates for these groups from the census API
+# 
+census_raw <- get_estimates(geography = "us",
+                            product="characteristics",
+                            breakdown=c("RACE","AGEGROUP","SEX"),
+                            breakdown_labels = T,
+                            year = "2019")
+
+# prepare census data for joining with missing persons data
+# removes native Hawaiians and other pacific islanders from data set
+census <- 
+  census_raw %>% 
+  clean_names() %>% 
+  mutate(sex = case_when(
+             sex == "Female" ~ "female",
+             sex == "Male" ~ "male",
+             sex == "Both sexes" ~ "all",
+             TRUE ~ "remove"
+           )) %>%
+    mutate(race = case_when(
+             race == "Black alone or in combination" ~ "black",
+             race == "White alone or in combination" ~ "white",
+             race == "Asian alone or in combination" ~ "asian",
+             race == "American Indian and Alaska Native alone or in combination" ~ "indian",
+             race == "All races" ~ "all",
+             TRUE ~ "remove"
+           )) %>%
+    mutate(age = case_when(
+             agegroup == "18 years and over" ~ "adult",
+             agegroup == "Under 18 years" ~ "minor",
+             agegroup == "All ages" ~ "all",
+             TRUE ~ "remove"
+           )) %>%
+  filter(race != "remove", sex != "remove", age != "remove") %>%
+  select(race, sex, age, value)
+
+census[census == "all"] = NA
+
+fbi_ncic_census_pop_race_sex_age_2020_22 <- 
+  inner_join(
+    fbi_ncic_race_sex_age_2020_22 %>% 
+      filter(!is.na(race), !is.na(sex), !is.na(age)), 
+    census %>% rename(pop = value), 
+    by=c("sex", "race", "age")) %>% 
+  select(-cat)
+
+fbi_ncic_census_pop_race_sex_age_2020_22_avg <-
+  fbi_ncic_census_pop_race_sex_age_2020_22 %>% 
+  group_by(race, sex, age, pop) %>% 
+  summarise(value = mean(value)) %>% 
+  ungroup()
+
+nodes <- 
+  rbind(
+    fbi_ncic_census_pop_race_sex_age_2020_22_avg %>% 
+      mutate(id=paste("C", race, sex, sep="_")) %>% 
+      group_by(id) %>% 
+      summarise() %>% 
+      select(id), 
+    fbi_ncic_census_pop_race_sex_age_2020_22_avg %>%
+     mutate(id=paste("D", race, sex, age, sep="_")) %>%
+     group_by(id) %>%
+     summarise() %>% 
+     select(id)
+  ) %>% 
+add_row(id="A")
+
+links_nominal <-
+  rbind(
+    fbi_ncic_census_pop_race_sex_age_2020_22_avg %>% 
+      group_by(race, sex) %>% 
+      summarise(value = sum(value)) %>% 
+      mutate(source=paste("A"), target=paste("C", race, sex, sep="_"), age="all"),
+    fbi_ncic_census_pop_race_sex_age_2020_22_avg %>% 
+      group_by(race, sex, age) %>% 
+      summarise(value = sum(value)) %>% 
+      mutate(source=paste("C",race, sex, sep="_"), target=paste("D", race, sex, age, sep="_"))
+    ) %>% 
+  arrange(source)
+
+links_per_capita <-
+  rbind(
+    fbi_ncic_census_pop_race_sex_age_2020_22_avg %>% 
+      group_by(race, sex, age) %>% 
+      summarise(value = 100000 * (sum(value)/sum(pop))) %>% 
+      ungroup() %>% 
+      group_by(race, sex) %>% 
+      summarise(value = sum(value)) %>% 
+      ungroup %>% 
+      mutate(source=paste("A"), target=paste("C", race, sex, sep="_"), age="all"),
+    fbi_ncic_census_pop_race_sex_age_2020_22_avg %>% 
+      group_by(race, sex, age) %>% 
+      summarise(value = 100000 * sum(value)/sum(pop)) %>% 
+      ungroup %>% 
+      mutate(source=paste("C",race, sex, sep="_"), target=paste("D", race, sex, age, sep="_")) 
+    ) %>% 
+  arrange(source)
+
+json <- 
+  toJSON(
+  list(
+  "nominal" = list(
+                  "nodes" = nodes,
+                  "links" = links_nominal),
+  "per_capita" = list(
+                    "nodes" = nodes,
+                    "links" = links_per_capita)
+  ),
+  data.frame="rows",
+  pretty = T
+  )
+
+write(
+  paste0("export default ", json),
+  "../app/src/routes/data/_data/sankey-data.js")
+ 
+```
+
+![Nominal](images/nominal_sankey.jpg)
+
+![Per Capita](images/per_capita_sankey.jpg)
+
+```{r echo=TRUE}
+fbi_ncic_nominal_vs_per_capita_2020_22_avg <- 
+  fbi_ncic_census_pop_race_sex_age_2020_22_avg %>%
+    mutate(
+      nominal = value / 
+        sum(fbi_ncic_census_pop_race_sex_age_2020_22_avg$value), 
+      per_capita =  value / 
+        pop / 
+        sum(fbi_ncic_census_pop_race_sex_age_2020_22_avg$value /
+              fbi_ncic_census_pop_race_sex_age_2020_22_avg$pop)
+      ) 
+
+
+fbi_ncic_nominal_vs_per_capita_2020_22_avg_race <- 
+  fbi_ncic_nominal_vs_per_capita_2020_22_avg %>% 
+    group_by(race) %>% 
+    summarise(nominal = sum(nominal),
+              per_capita = sum(per_capita)) %>% 
+    ungroup() 
+
+write(
+  paste0("export default ", toJSON(fbi_ncic_nominal_vs_per_capita_2020_22_avg_race, dataframe = "columns", pretty = TRUE)),
+  "../app/src/routes/data/_data/area-compare.js") 
+
+fbi_ncic_census_pop_race_sex_age_2020_22_avg %>% 
+  group_by(race) %>% 
+  summarise(value = sum(value), pop = sum(pop)) %>% 
+  mutate(per_capita = 100000 * value / pop)
+
+```
+
+382 Black Americans go missing every year compared to the White Americans at 121.
+
+![](images/area.jpg){width="445"}
+
+![](images/race_key.jpg)
+
+```{r}
+fbi_ncic_nominal_vs_per_capita_2020_22_avg %>% 
+  group_by(age) %>% 
+  summarise(nominal = sum(nominal),
+            per_capita = sum(per_capita))
+```
+
+![](images/bar.jpg)
+
+```{r}
+fbi_ncic_census_pop_race_sex_age <-
+  left_join(
+    fbi_ncic %>% 
+      filter(is.na(cat)) %>% 
+      rename(cases = value), 
+    census %>% 
+      rename(pop = value), 
+    by=c("race", "sex", "age")) %>% 
+  filter(!is.na(pop)) %>% 
+  select(-cat)
+
+totals <- fbi_ncic_census_pop_race_sex_age %>%
+  group_by(year) %>%
+  summarise(total_cases = sum(cases), total_pop = sum(pop)) %>%
+  mutate(per_one = total_cases / total_pop) %>% 
+  select(year, per_one, total_pop, total_cases)
+
+fbi_ncic_census_pop_race_sex_age_probabilites <-
+  fbi_ncic_census_pop_race_sex_age %>%
+  rbind(
+    fbi_ncic_census_pop_race_sex_age %>%
+      filter(year >= 2020) %>% 
+      group_by(year, race, age) %>% 
+      summarise(cases = sum(cases), pop = sum(pop)) %>% 
+      ungroup() %>% 
+      mutate(sex="all")
+  ) %>% 
+  rbind(
+    fbi_ncic_census_pop_race_sex_age %>%
+      filter(year >= 2020) %>%       
+      group_by(year, race, sex) %>% 
+      summarise(cases = sum(cases), pop = sum(pop)) %>% 
+      ungroup() %>% 
+      mutate(age="all")
+  ) %>% 
+   rbind(
+    fbi_ncic_census_pop_race_sex_age %>%
+      filter(year >= 2020) %>% 
+      group_by(year, age, sex) %>% 
+      summarise(cases = sum(cases), pop = sum(pop)) %>% 
+      ungroup() %>% 
+      mutate(race="all")
+  ) %>% 
+   rbind(
+    fbi_ncic_census_pop_race_sex_age %>%
+      filter(year >= 2020) %>% 
+      group_by(year, race) %>% 
+      summarise(cases = sum(cases), pop = sum(pop)) %>% 
+      ungroup() %>% 
+      mutate(sex="all", age="all")
+  ) %>% 
+   rbind(
+    fbi_ncic_census_pop_race_sex_age %>%
+      filter(year >= 2020) %>% 
+      group_by(year, sex) %>% 
+      summarise(cases = sum(cases), pop = sum(pop)) %>% 
+      ungroup() %>% 
+      mutate(race="all", age="all")
+  ) %>% 
+   rbind(
+    fbi_ncic_census_pop_race_sex_age %>%
+      filter(year >= 2020) %>% 
+      group_by(year, age) %>% 
+      summarise(cases = sum(cases), pop = sum(pop)) %>% 
+      ungroup() %>% 
+      mutate(sex="all", race="all")
+  ) %>% 
+   rbind(
+    fbi_ncic_census_pop_race_sex_age %>%
+      filter(year >= 2020) %>% 
+      group_by(year) %>% 
+      summarise(cases = sum(cases), pop = sum(pop)) %>% 
+      ungroup() %>% 
+      mutate(sex="all", race="all", age="all")
+  ) %>% 
+    left_join(totals, by=c("year")) %>% 
+    mutate(
+      relative_risk = cases / pop / per_one,
+      pop_percent = pop / total_pop,
+      cases_percent = cases / total_cases,
+      diff_percent = pop_percent - cases_percent
+    ) %>% 
+    filter(year >= 2020)
+  
+
+fbi_ncic_census_pop_race_sex_age_probabilites[is.na(fbi_ncic_census_pop_race_sex_age_probabilites)] <- "all"
+
+
+json <- 
+
+write(paste0("export default ", 
+             (toJSON(fbi_ncic_census_pop_race_sex_age_probabilites,
+                     data.frame="rows", 
+                     pretty=T, 
+                     na="string"))),
+      "../app/src/routes/data/_data/bee-data.js")
+```
+
+![](images/bee.jpg)
+
+```{r}
+
+fbi_ncic_census_pop_race_sex_age_probabilites <- 
+  fbi_ncic_census_pop_race_sex_age_probabilites %>% 
+  left_join(
+    fbi_ncic_census_pop_race_sex_age_probabilites %>% 
+      group_by(race, year) %>% 
+      summarise(relative_risk_race = (sum(cases)/sum(pop))/mean(per_one)) %>% 
+      ungroup(),
+    by=c("race", "year")
+  ) %>% 
+  left_join(
+    fbi_ncic_census_pop_race_sex_age_probabilites %>% 
+      group_by(age, year) %>% 
+      summarise(relative_risk_age = (sum(cases)/sum(pop))/mean(per_one)) %>% 
+      ungroup(),
+    by=c("age", "year")
+  ) %>% 
+  left_join(
+    fbi_ncic_census_pop_race_sex_age_probabilites %>% 
+      group_by(sex, year) %>% 
+      summarise(relative_risk_sex = (sum(cases)/sum(pop))/mean(per_one)) %>% 
+      ungroup(),
+    by=c("sex", "year")
+  )  %>% 
+  left_join(
+    fbi_ncic_census_pop_race_sex_age_probabilites %>% 
+      group_by(sex, age, year) %>% 
+      summarise(relative_risk_sex_age=(sum(cases)/sum(pop))/mean(per_one)) %>% 
+      ungroup(),
+    by=c("sex", "age", "year")
+  )  %>% 
+  left_join(
+    fbi_ncic_census_pop_race_sex_age_probabilites %>% 
+      group_by(sex, race, year) %>% 
+      summarise(relative_risk_race_sex=(sum(cases)/sum(pop))/mean(per_one)) %>% 
+      ungroup(),
+    by=c("sex", "race", "year")
+  )  %>% 
+  left_join(
+    fbi_ncic_census_pop_race_sex_age_probabilites %>% 
+      group_by(race, age, year) %>% 
+      summarise(relative_risk_race_age=(sum(cases)/sum(pop))/mean(per_one)) %>% 
+      ungroup(),
+    by=c("race", "age", "year")
+  )  %>% 
+  # mutate(
+  #   relative_risk_unknown =
+  #     as.numeric(
+  #   fbi_ncic_census_pop_race_sex_age_probabilites %>% 
+  #     group_by(year) %>% 
+  #     summarise(relative_risk_unknown = (sum(cases)/sum(pop))/per_one) %>% 
+  #     ungroup()
+  #     )
+  # ) %>% 
+#   group_by(race, sex, age, year) %>% 
+#   summarise(
+#     unknown = mean(unknown_prob),
+#     race_prob = mean(race_prob),
+#     sex_prob = mean(sex_prob),
+#     age_prob = mean(age_prob),
+#     race_age_prob = mean(race_age_prob),
+#     race_sex_prob = mean(race_sex_prob),
+#     sex_age_prob = mean(sex_age_prob),
+#     prob = mean(prob)
+# ) %>% 
+  mutate(
+    relative_risk_race_isolated = relative_risk_race - 1,
+    relative_risk_sex_isolated = relative_risk_sex - 1,
+    relative_risk_age_isolated = relative_risk_age - 1,
+    relative_risk_race_age_isolated = relative_risk_race_age - relative_risk_race_isolated - relative_risk_age_isolated - 1,
+    relative_risk_race_sex_isolated = relative_risk_race_sex - relative_risk_race_isolated - relative_risk_sex_isolated - 1,
+    relative_risk_sex_age_isolated = relative_risk_sex_age - relative_risk_sex_isolated - relative_risk_age_isolated - 1,
+    relative_risk_race_sex_age_isolated = relative_risk - relative_risk_race_age_isolated - relative_risk_race_sex_isolated - relative_risk_sex_age_isolated - relative_risk_race_isolated - relative_risk_sex_isolated - relative_risk_age_isolated - 1
+) %>% 
+  arrange(desc(relative_risk))
+
+json <- fbi_ncic_census_pop_race_sex_age_probabilites %>% select(-per_one, -total_pop, -total_cases)
+
+json <- list(
+  "2022" = list(
+    "total_cases" = totals %>% filter(year == 2022) %>% select(total_cases) %>% as.numeric(), 
+     "breakdown" = json %>% filter( year == 2022 )),
+  "2021" = list(
+    "total_cases" = totals %>% filter(year == 2021) %>% select(total_cases) %>% as.numeric(), 
+     "breakdown" = json %>% filter( year == 2021 )),
+  "2020" = list(
+    "total_cases" = totals %>% filter(year == 2020) %>% select(total_cases) %>% as.numeric(), 
+    "breakdown" = json %>% filter( year == 2020 ))
+  )
+
+
+write(paste0("export default ", 
+             (toJSON(json,
+                     data.frame="rows", 
+                     pretty=T))),
+      "../app/src/routes/data/_data/new_data.js")
+
+```
+
+![](images/prob.jpg)
+
+### B. National Missing and Unidentified Persons System (current)
+
+![](images/map.jpg){width="649"}
+
+## 3. Recommendations and resources for further research {#recommendations-and-resources-for-further-research-1}
+
+-   request new york state or chicagos missing persons
+-   re-request namus files
+-   further pursue fbi records
